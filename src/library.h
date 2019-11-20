@@ -1,0 +1,5 @@
+#ifndef SMIPC_LIBRARY_H
+#define SMIPC_LIBRARY_H
+
+
+#endif //SMIPC_LIBRARY_H
