@@ -11,6 +11,7 @@
 #define FALSE 0
 
 void logInfo(char* msg);
+void logWarn(char *msg);
 void logError(char* msg);
 
 typedef struct _String {
@@ -28,18 +29,5 @@ String appendToNewString(String s, const char *t, int len);
 String concatString(String s1, String s2);
 int equalString(String a, String b);
 void releaseString(String s);
-
-typedef struct _SyncBuf {
-    HANDLE hWriteSem, hReadSem;
-    char *buf;
-    int bufSz;
-    int rc, wc;
-} *SyncBuf;
-
-SyncBuf newSyncBuf(String semName, char *buf, int bufSz);
-void writeSyncBuf(SyncBuf syncBuf, char *data, int len);
-int readSyncBuf(SyncBuf syncBuf, char *buf, int n);
-int readSyncBufB(SyncBuf syncBuf, char *buf, int n);
-void releaseSyncBuf(SyncBuf syncBuf);
 
 #endif //SMIPC_UTIL_H
