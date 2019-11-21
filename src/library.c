@@ -24,8 +24,11 @@ const unsigned char MARK_WRITER_CLOSE    = 0b0001;
 #define sb_rc(syncBuf) (syncBuf->shared->rc)
 #define sb_wc(syncBuf) (syncBuf->shared->wc)
 
-typedef map_t(struct channel) channel_map_t;
+typedef map_t(Channel) channel_map_t;
 
+/**
+ * channel_map_t: map_set会把值做一个拷贝这样就可以自己管理值需要的内存，map_get则会返回自己管理的值的内存的指针，而不是值
+ */
 channel_map_t* channelMap;
 
 void initLibrary() {
@@ -36,11 +39,21 @@ void initLibrary() {
 }
 
 void cleanLibrary() {
+    printf("");
     if (channelMap != NULL) {
+        const char *key;
+        Channel channel;
+
+        map_iter_t iter = map_iter(&m);
+        while ((key = map_next(channelMap, &iter))) {
+            channel = *map_get(channelMap, key);
+            closeChannel((char*)key);
+            free(channel);
+        }
+
         map_deinit(channelMap);
         free(channelMap);
         channelMap = NULL;
-        // TODO: free unclosed channel
     }
 }
 
@@ -126,7 +139,7 @@ int openChannel(char *cid, int mode, int chanSz) {
     channel->mode = mode;
     channel->hShareMem = hShareMem;
     channel->syncBuf = syncBuf;
-    map_set(channelMap, cid, *channel);
+    map_set(channelMap, cid, channel);
 
     // unlock
     unlock(mutex);
@@ -142,7 +155,7 @@ int openChannel(char *cid, int mode, int chanSz) {
  * @return OP_SUCCEED, OPPOSITE_END_CLOSED, OP_FAILED
  */
 int writeChannel(char *cid, char *data, int len) {
-    Channel channel = map_get(channelMap, cid);
+    Channel channel = *map_get(channelMap, cid);
     if (channel == NULL) {
         logError("Channel doesn't exist, make sure open it at first.");
         return OP_FAILED;
@@ -164,7 +177,7 @@ int writeChannel(char *cid, char *data, int len) {
  * @return n, OPPOSITE_END_CLOSED, OP_FAILED
  */
 int readChannel(char *cid, char *buf, int n, char blocking) {
-    Channel channel = map_get(channelMap, cid);
+    Channel channel = *map_get(channelMap, cid);
     if (channel == NULL) {
         logError("Channel doesn't exist, make sure open it at first.");
         return OP_FAILED;
@@ -182,7 +195,7 @@ int readChannel(char *cid, char *buf, int n, char blocking) {
 }
 
 int printChannelStatus(char *cid) {
-    Channel channel = map_get(channelMap, cid);
+    Channel channel = *map_get(channelMap, cid);
     if (channel == NULL) {
         logError("Channel doesn't exist, make sure open it at first.");
         return OP_FAILED;
@@ -208,32 +221,41 @@ int printChannelStatus(char *cid) {
  * @return OP_SUCCEED, OP_FAILED
  */
 int closeChannel(char *cid) {
-    Channel channel = map_get(channelMap, cid);
+    Channel channel = *map_get(channelMap, cid);
+
     if (channel == NULL) {
         logError("Cannot close nonexistent channel.");
         return OP_FAILED;
     }
     map_remove(channelMap, cid);
+
     // release SyncBuf
     SyncBuf syncBuf = channel->syncBuf;
-    // release respective windows resources if the opposite end has been closed.
-    if ((channel->mode == CHAN_R && is_writer_close(syncBuf))
-        || (channel->mode == CHAN_W && is_reader_close(syncBuf))) {
-        CloseHandle(syncBuf->hWriteSem);
-        CloseHandle(syncBuf->hReadSem);
-        syncBuf->hWriteSem = NULL;
-        syncBuf->hReadSem = NULL;
-        CloseHandle(channel->hShareMem);
+    // update mark
+    if (channel->mode == CHAN_R) {
+        set_reader_close(syncBuf);
     } else {
-        // update mark
-        if (channel->mode == CHAN_R) {
-            set_reader_close(syncBuf);
-        } else {
-            set_writer_close(syncBuf);
-        }
+        set_writer_close(syncBuf);
     }
-    channel->hShareMem = NULL;
-    channel->syncBuf = NULL;
+
+    // release windows resources
+    if (CloseHandle(syncBuf->hWriteSem) == FALSE) {
+        DWORD err = GetLastError();
+        printf("[ERROR] Failed to close windows resource, err=%ld\n", err);
+        return OP_FAILED;
+    }
+    if (CloseHandle(syncBuf->hReadSem) == FALSE) {
+        DWORD err = GetLastError();
+        printf("[ERROR] Failed to close windows resource, err=%ld\n", err);
+        return OP_FAILED;
+    }
+    if (CloseHandle(channel->hShareMem) == FALSE) {
+        DWORD err = GetLastError();
+        printf("[ERROR] Failed to close windows resource, err=%ld\n", err);
+        return OP_FAILED;
+    }
+
+    free(syncBuf);
     free(channel);
 
     printf("[DEBUG] Channel closed: %s\n", cid);
