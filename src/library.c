@@ -39,7 +39,6 @@ void initLibrary() {
 }
 
 void cleanLibrary() {
-    printf("");
     if (channelMap != NULL) {
         const char *key;
         Channel channel;
@@ -70,8 +69,10 @@ int openChannel(char *cid, int mode, int chanSz) {
         return OP_FAILED;
     }
 
-    Channel channel = (Channel)map_get(channelMap, cid);
-    if (channel != NULL) {
+    Channel channel, *p;
+    p = map_get(channelMap, cid);
+    if (p != NULL) {
+        channel = *p;
         // check channel's mode
         if (channel->mode != mode) {
             logError("Specified channel has been opened in different mode.");
@@ -155,11 +156,13 @@ int openChannel(char *cid, int mode, int chanSz) {
  * @return OP_SUCCEED, OPPOSITE_END_CLOSED, OP_FAILED
  */
 int writeChannel(char *cid, char *data, int len) {
-    Channel channel = *map_get(channelMap, cid);
-    if (channel == NULL) {
+    Channel channel, *p;
+    p = map_get(channelMap, cid);
+    if (p == NULL) {
         logError("Channel doesn't exist, make sure open it at first.");
         return OP_FAILED;
     }
+    channel = *p;
     // check channel's mode
     if (channel->mode != CHAN_W) {
         logError("Channel doesn't support write operation.");
@@ -177,11 +180,13 @@ int writeChannel(char *cid, char *data, int len) {
  * @return n, OPPOSITE_END_CLOSED, OP_FAILED
  */
 int readChannel(char *cid, char *buf, int n, char blocking) {
-    Channel channel = *map_get(channelMap, cid);
-    if (channel == NULL) {
+    Channel channel, *p;
+    p = map_get(channelMap, cid);
+    if (p == NULL) {
         logError("Channel doesn't exist, make sure open it at first.");
         return OP_FAILED;
     }
+    channel = *p;
     // check channel's mode
     if (channel->mode != CHAN_R) {
         logError("Channel doesn't support read operation.");
@@ -195,11 +200,14 @@ int readChannel(char *cid, char *buf, int n, char blocking) {
 }
 
 int printChannelStatus(char *cid) {
-    Channel channel = *map_get(channelMap, cid);
-    if (channel == NULL) {
+    Channel channel, *p;
+    p = map_get(channelMap, cid);
+    if (p == NULL) {
         logError("Channel doesn't exist, make sure open it at first.");
         return OP_FAILED;
     }
+    channel = *p;
+
     printf("Channel(%s): mode=%c hShareMem=%s syncBuf=", cid, channel->mode == CHAN_R ? 'R' : 'W',
             channel->hShareMem != NULL ? "valid" : "invalid");
     SyncBuf syncBuf = channel->syncBuf;
@@ -221,12 +229,14 @@ int printChannelStatus(char *cid) {
  * @return OP_SUCCEED, OP_FAILED
  */
 int closeChannel(char *cid) {
-    Channel channel = *map_get(channelMap, cid);
-
-    if (channel == NULL) {
+    Channel channel, *p;
+    p = map_get(channelMap, cid);
+    if (p == NULL) {
         logError("Cannot close nonexistent channel.");
         return OP_FAILED;
     }
+    channel = *p;
+
     map_remove(channelMap, cid);
 
     // release SyncBuf
