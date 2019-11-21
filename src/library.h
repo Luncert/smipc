@@ -5,25 +5,20 @@
 #include "map.h"
 #include "util.h"
 
-const int OP_SUCCEED = 0;
-const int OP_FAILED = -1;
-const int OPPOSITE_END_CLOSED = -2;
+#define OP_SUCCEED 0
+#define OP_FAILED -1
+#define OPPOSITE_END_CLOSED -2
 
-const unsigned char MARK_READER_OPEN     = 0b1000;
-const unsigned char MARK_WRITER_OPEN     = 0b0100;
-const unsigned char MARK_READER_CLOSE    = 0b0010;
-const unsigned char MARK_WRITER_CLOSE    = 0b0001;
-
-const int CHAN_R = 0;
-const int CHAN_W = 1;
-
-map_void_t* channelMap;
+#define CHAN_R 0
+#define CHAN_W 1
 
 typedef struct syncBuf {
-    unsigned char mark;
     HANDLE hWriteSem, hReadSem;
-    int bufSz, rc, wc;
-    char *buf;
+    struct _shared {
+        unsigned char mark;
+        int bufSz, rc, wc;
+        char *buf;
+    } *shared;
 } *SyncBuf;
 
 typedef struct channel {
@@ -34,9 +29,10 @@ typedef struct channel {
 
 void initLibrary();
 void cleanLibrary();
-int openChannel(char *cid, int mode, int memSz);
+int openChannel(char *cid, int mode, int chanSz);
 int writeChannel(char *cid, char *data, int len);
 int readChannel(char *cid, char *buf, int n, char blocking);
+int printChannelStatus(char *cid);
 int closeChannel(char *cid);
 
 int createRWSemaphore(String namePrefix, HANDLE *hRSem, HANDLE *hWSem, int count);

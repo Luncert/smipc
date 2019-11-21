@@ -1,13 +1,36 @@
-#include "library.h"
 
 #include <stdio.h>
 #include <windows.h>
 #include "map.h"
 #include "util.h"
+#include "library.h"
+
+const unsigned char MARK_READER_OPEN     = 0b1000;
+const unsigned char MARK_WRITER_OPEN     = 0b0100;
+const unsigned char MARK_READER_CLOSE    = 0b0010;
+const unsigned char MARK_WRITER_CLOSE    = 0b0001;
+
+#define is_reader_open(syncBuf)     (syncBuf->shared->mark & MARK_READER_OPEN)
+#define is_writer_open(syncBuf)     (syncBuf->shared->mark & MARK_WRITER_OPEN)
+#define is_reader_close(syncBuf)    (syncBuf->shared->mark & MARK_READER_CLOSE)
+#define is_writer_close(syncBuf)    (syncBuf->shared->mark & MARK_WRITER_CLOSE)
+#define set_reader_open(syncBuf)    (syncBuf->shared->mark |= MARK_READER_OPEN)
+#define set_writer_open(syncBuf)    (syncBuf->shared->mark |= MARK_WRITER_OPEN)
+#define set_reader_close(syncBuf)   (syncBuf->shared->mark |= MARK_READER_CLOSE)
+#define set_writer_close(syncBuf)   (syncBuf->shared->mark |= MARK_WRITER_CLOSE)
+#define get_buf_readable(syncBuf)   (syncBuf->shared->wc > syncBuf->shared->rc ? syncBuf->shared->wc - syncBuf->shared->rc : syncBuf->shared->bufSz + syncBuf->shared->wc - syncBuf->shared->rc)
+#define sb_buf(syncBuf) (syncBuf->shared->buf)
+#define sb_bufSz(syncBuf) (syncBuf->shared->bufSz)
+#define sb_rc(syncBuf) (syncBuf->shared->rc)
+#define sb_wc(syncBuf) (syncBuf->shared->wc)
+
+typedef map_t(struct channel) channel_map_t;
+
+channel_map_t* channelMap;
 
 void initLibrary() {
     if (channelMap == NULL) {
-        channelMap = (map_void_t*)malloc(sizeof(map_void_t));
+        channelMap = (channel_map_t*)malloc(sizeof(channel_map_t));
         map_init(channelMap);
     }
 }
@@ -17,6 +40,7 @@ void cleanLibrary() {
         map_deinit(channelMap);
         free(channelMap);
         channelMap = NULL;
+        // TODO: free unclosed channel
     }
 }
 
@@ -24,10 +48,10 @@ void cleanLibrary() {
  * openChannel
  * @param cid channel id
  * @param mode channel mode, CHAN_R or CHAN_W
- * @param memSz vailable memory size for channel
+ * @param chanSz vailable memory size for channel
  * @return OP_SUCCEED, OP_FAILED
  */
-int openChannel(char *cid, int mode, int memSz) {
+int openChannel(char *cid, int mode, int chanSz) {
     if (mode != CHAN_R && mode != CHAN_W) {
         logError("invalid channel mode, must be CHAN_R(0) or CHAN_W(1).");
         return OP_FAILED;
@@ -49,11 +73,11 @@ int openChannel(char *cid, int mode, int memSz) {
     HANDLE hShareMem = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, cid);
     if (hShareMem == NULL || hShareMem == INVALID_HANDLE_VALUE) {
         // Failed to open channel's shared memory, try to create
-        if (memSz < 128) {
-            memSz = 128;
-            logWarn("memSz must be bigger than 128Bytes, auto adjusted.");
+        if (chanSz < 128) {
+            chanSz = 128;
+            logWarn("chanSz must be bigger than 128Bytes, auto adjusted.");
         }
-        hShareMem = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, memSz, cid);
+        hShareMem = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, chanSz + sizeof(struct syncBuf), cid);
         // check error
         if (hShareMem == INVALID_HANDLE_VALUE || hShareMem == NULL) {
             logError("Failed to create shared memory.");
@@ -73,7 +97,7 @@ int openChannel(char *cid, int mode, int memSz) {
         // get shared memory's pointer
         shareMem = (char*)MapViewOfFile(hShareMem,FILE_MAP_WRITE|FILE_MAP_READ,
                                           0,0,0);
-        memset(shareMem, 0, memSz);
+        memset(shareMem, 0, sizeof(struct syncBuf));
         isNewMem = TRUE;
     } else {
         shareMem = (char*)MapViewOfFile(hShareMem,FILE_MAP_WRITE|FILE_MAP_READ,
@@ -88,7 +112,7 @@ int openChannel(char *cid, int mode, int memSz) {
 
     String semName = parseConstToString(cid);
     appendString(semName, "/sem", 4);
-    SyncBuf syncBuf = newSyncBuf(shareMem, memSz, mode, semName, isNewMem);
+    SyncBuf syncBuf = newSyncBuf(shareMem, chanSz, mode, semName, isNewMem);
     if (syncBuf == NULL) {
         CloseHandle(hShareMem);
 
@@ -102,7 +126,7 @@ int openChannel(char *cid, int mode, int memSz) {
     channel->mode = mode;
     channel->hShareMem = hShareMem;
     channel->syncBuf = syncBuf;
-    map_set(channelMap, cid, channel);
+    map_set(channelMap, cid, *channel);
 
     // unlock
     unlock(mutex);
@@ -118,7 +142,7 @@ int openChannel(char *cid, int mode, int memSz) {
  * @return OP_SUCCEED, OPPOSITE_END_CLOSED, OP_FAILED
  */
 int writeChannel(char *cid, char *data, int len) {
-    Channel channel = (Channel)map_get(channelMap, cid);
+    Channel channel = map_get(channelMap, cid);
     if (channel == NULL) {
         logError("Channel doesn't exist, make sure open it at first.");
         return OP_FAILED;
@@ -140,7 +164,7 @@ int writeChannel(char *cid, char *data, int len) {
  * @return n, OPPOSITE_END_CLOSED, OP_FAILED
  */
 int readChannel(char *cid, char *buf, int n, char blocking) {
-    Channel channel = (Channel)map_get(channelMap, cid);
+    Channel channel = map_get(channelMap, cid);
     if (channel == NULL) {
         logError("Channel doesn't exist, make sure open it at first.");
         return OP_FAILED;
@@ -157,13 +181,34 @@ int readChannel(char *cid, char *buf, int n, char blocking) {
     }
 }
 
+int printChannelStatus(char *cid) {
+    Channel channel = map_get(channelMap, cid);
+    if (channel == NULL) {
+        logError("Channel doesn't exist, make sure open it at first.");
+        return OP_FAILED;
+    }
+    printf("Channel(%s): mode=%c hShareMem=%s syncBuf=", cid, channel->mode == CHAN_R ? 'R' : 'W',
+            channel->hShareMem != NULL ? "valid" : "invalid");
+    SyncBuf syncBuf = channel->syncBuf;
+    printf("{");
+    printf("RO=%c", is_reader_open(syncBuf) ? '1' : '0');
+    printf(" WO=%c", is_writer_open(syncBuf) ? '1' : '0');
+    printf(" RC=%c", is_reader_close(syncBuf) ? '1' : '0');
+    printf(" WC=%c", is_writer_close(syncBuf) ? '1' : '0');
+    printf(" hReadSem=%s", syncBuf->hReadSem != NULL ? "valid" : "invalid");
+    printf(" hWriteSem=%s", syncBuf->hWriteSem != NULL ? "valid" : "invalid");
+    printf(" bufSz=%d readCursor=%d writeCursor=%d", syncBuf->shared->bufSz, syncBuf->shared->rc, syncBuf->shared->wc);
+    printf("}\n");
+    return OP_SUCCEED;
+}
+
 /**
  * closeChannel
  * @param cid channel id
  * @return OP_SUCCEED, OP_FAILED
  */
 int closeChannel(char *cid) {
-    Channel channel = (Channel)map_get(channelMap, cid);
+    Channel channel = map_get(channelMap, cid);
     if (channel == NULL) {
         logError("Cannot close nonexistent channel.");
         return OP_FAILED;
@@ -172,8 +217,8 @@ int closeChannel(char *cid) {
     // release SyncBuf
     SyncBuf syncBuf = channel->syncBuf;
     // release respective windows resources if the opposite end has been closed.
-    if ((channel->mode == CHAN_R && syncBuf->mark & MARK_WRITER_CLOSE)
-        || syncBuf->mark & MARK_READER_CLOSE) {
+    if ((channel->mode == CHAN_R && is_writer_close(syncBuf))
+        || (channel->mode == CHAN_W && is_reader_close(syncBuf))) {
         CloseHandle(syncBuf->hWriteSem);
         CloseHandle(syncBuf->hReadSem);
         syncBuf->hWriteSem = NULL;
@@ -182,98 +227,109 @@ int closeChannel(char *cid) {
     } else {
         // update mark
         if (channel->mode == CHAN_R) {
-            syncBuf->mark |= MARK_READER_CLOSE;
+            set_reader_close(syncBuf);
         } else {
-            syncBuf->mark |= MARK_WRITER_CLOSE;
+            set_writer_close(syncBuf);
         }
     }
     channel->hShareMem = NULL;
     channel->syncBuf = NULL;
     free(channel);
+
+    printf("[DEBUG] Channel closed: %s\n", cid);
     return OP_SUCCEED;
 }
 
 // SyncBuf
 
-SyncBuf newSyncBuf(char *shareMem, int memSz, int mode, String semName, char isNewMem) {
-    SyncBuf syncBuf = (SyncBuf)shareMem;
+SyncBuf newSyncBuf(char *shareMem, int bufSz, int mode, String semName, char isNewMem) {
+    SyncBuf syncBuf = (SyncBuf)malloc(sizeof(struct syncBuf));
+    syncBuf->shared = (struct _shared*)shareMem;
     if (isNewMem) {
         // set mark
         if (mode == CHAN_R) {
-            syncBuf->mark |= MARK_READER_OPEN;
+            set_reader_open(syncBuf);
         } else {
-            syncBuf->mark |= MARK_WRITER_OPEN;
+            set_writer_open(syncBuf);
         }
         // rc and wc should be set zero and we have done that.
-        syncBuf->bufSz = memSz - (int)sizeof(struct syncBuf);
-        // create sem
-        if (createRWSemaphore(semName, &syncBuf->hWriteSem, &syncBuf->hReadSem, syncBuf->bufSz) !=  OP_SUCCEED) {
-            return NULL;
-        }
-        syncBuf->buf = shareMem + sizeof(struct syncBuf);
+        syncBuf->shared->bufSz = bufSz;
+        syncBuf->shared->buf = shareMem + sizeof(struct _shared);
     } else {
         // check memory mark
         if (mode == CHAN_R) {
-            if (syncBuf->mark & MARK_READER_CLOSE) {
+            if (is_reader_close(syncBuf)) {
                 logError("Channel has been closed from reader's side.");
                 return NULL;
-            } else if (syncBuf->mark & MARK_READER_OPEN) {
+            } else if (is_reader_open(syncBuf)) {
                 logError("Channel has been opened from reader's side by another process.");
                 return NULL;
+            } else {
+                set_reader_open(syncBuf);
             }
         } else {
-            if (syncBuf->mark & MARK_WRITER_CLOSE) {
+            if (is_writer_close(syncBuf)) {
                 logError("Channel has been closed from writer's side.");
                 return NULL;
-            } else if (syncBuf->mark & MARK_WRITER_OPEN) {
+            } else if (is_writer_open(syncBuf)) {
                 logError("Channel has been opened from writer's side by another process.");
                 return NULL;
+            } else {
+                set_writer_open(syncBuf);
             }
         }
         // every attr of SyncBuf could be read from the share memory.
     }
+    // create sem
+    if (createRWSemaphore(semName, &syncBuf->hWriteSem, &syncBuf->hReadSem, syncBuf->shared->bufSz) != OP_SUCCEED) {
+        return NULL;
+    }
     return syncBuf;
 }
 
-int createRWSemaphore(String namePrefix, HANDLE *hRSem, HANDLE *hWSem, int count) {
+int createRWSemaphore(String namePrefix, HANDLE *hWSem, HANDLE *hRSem, int count) {
+    int ret = OP_SUCCEED;
+
     String writeSemName = appendToNewString(namePrefix, "#W", 2);
     String readSemName = appendToNewString(namePrefix, "#R", 2);
 
     *hWSem = OpenSemaphore(SEMAPHORE_ALL_ACCESS, FALSE, writeSemName->val);
     if (*hWSem == NULL) {
-        hWSem = CreateSemaphore(NULL, count, count, writeSemName->val);
-        if (hWSem == INVALID_HANDLE_VALUE || hWSem == NULL) {
+        *hWSem = CreateSemaphore(NULL, count, count, writeSemName->val);
+        if (*hWSem == INVALID_HANDLE_VALUE || *hWSem == NULL) {
             logError("Failed to create write semaphore for SyncBuf.");
-            goto errHandle;
+            ret = OP_FAILED;
         }
     }
 
-    *hRSem = OpenSemaphore(SEMAPHORE_ALL_ACCESS, FALSE, readSemName->val);
-    if (*hRSem == NULL) {
-        hRSem = CreateSemaphore(NULL, 0, count, readSemName->val);
-        if (hRSem == INVALID_HANDLE_VALUE || hRSem == NULL) {
-            logError("Failed to create read semaphore for SyncBuf.");
-            CloseHandle(*hWSem);
-            goto errHandle;
+    if (ret == OP_SUCCEED) {
+        *hRSem = OpenSemaphore(SEMAPHORE_ALL_ACCESS, FALSE, readSemName->val);
+        if (*hRSem == NULL) {
+            *hRSem = CreateSemaphore(NULL, 0, count, readSemName->val);
+            if (*hRSem == INVALID_HANDLE_VALUE || *hRSem == NULL) {
+                logError("Failed to create read semaphore for SyncBuf.");
+                CloseHandle(*hWSem);
+                ret = OP_FAILED;
+            }
         }
     }
 
-    return OP_SUCCEED;
-
-    errHandle:
     releaseString(writeSemName);
     releaseString(readSemName);
-    return OP_FAILED;
+    return ret;
 }
 
 int writeSyncBuf(SyncBuf syncBuf, const char *data, int len) {
     for (int i = 0; i < len;) {
-        if (syncBuf->mark & MARK_READER_CLOSE) {
+        if (is_reader_close(syncBuf)) {
             return OPPOSITE_END_CLOSED;
         }
-        WaitForSingleObject(syncBuf->hWriteSem, INFINITE);
-        syncBuf->buf[syncBuf->wc] = data[i++];
-        syncBuf->wc = (syncBuf->wc + 1) % syncBuf->bufSz;
+        if (WaitForSingleObject(syncBuf->hWriteSem, INFINITE) == WAIT_FAILED) {
+            logError("Failed to wait write sem.");
+            return OP_FAILED;
+        }
+        sb_buf(syncBuf)[sb_wc(syncBuf)] = data[i++];
+        sb_wc(syncBuf) = (sb_wc(syncBuf) + 1) % sb_bufSz(syncBuf);
         ReleaseSemaphore(syncBuf->hReadSem, 1, NULL);
     }
     return OP_SUCCEED;
@@ -283,18 +339,20 @@ int readSyncBuf(SyncBuf syncBuf, char *buf, int n) {
     if (n <= 0) {
         return 0;
     }
-    int readable = syncBuf->wc > syncBuf->rc ? syncBuf->wc - syncBuf->rc
-                                             : syncBuf->bufSz + syncBuf->wc - syncBuf->rc;
-    if (readable == 0 && syncBuf->mark & MARK_WRITER_CLOSE) {
+    int readable = get_buf_readable(syncBuf);
+    if (readable == 0 && is_writer_close(syncBuf)) {
         return OPPOSITE_END_CLOSED;
     }
     if (n > readable) {
         n = readable;
     }
     for (int i = 0; i < n; i++) {
-        WaitForSingleObject(syncBuf->hReadSem, INFINITE);
-        buf[i] = syncBuf->buf[syncBuf->rc];
-        syncBuf->rc = (syncBuf->rc + 1) % syncBuf->bufSz;
+        if (WaitForSingleObject(syncBuf->hReadSem, INFINITE) == WAIT_FAILED) {
+            logError("Failed to wait read sem.");
+            return OP_FAILED;
+        }
+        buf[i] = syncBuf->shared->buf[syncBuf->shared->rc];
+        syncBuf->shared->rc = (syncBuf->shared->rc + 1) % syncBuf->shared->bufSz;
         ReleaseSemaphore(syncBuf->hWriteSem, 1, NULL);
     }
     return n;
@@ -305,16 +363,19 @@ int readSyncBufB(SyncBuf syncBuf, char *buf, int n) {
         return 0;
     }
     for (int i = 0; i < n; i++) {
-        if (syncBuf->mark & MARK_WRITER_CLOSE) {
+        if (is_writer_close(syncBuf)) {
             int tmp = readSyncBuf(syncBuf, buf + i, n - i);
             if (tmp >= 0) {
                 tmp += i;
             }
             return tmp;
         }
-        WaitForSingleObject(syncBuf->hReadSem, INFINITE);
-        buf[i] = syncBuf->buf[syncBuf->rc];
-        syncBuf->rc = (syncBuf->rc + 1) % syncBuf->bufSz;
+        if (WaitForSingleObject(syncBuf->hReadSem, INFINITE) == WAIT_FAILED) {
+            logError("Failed to wait read sem.");
+            return OP_FAILED;
+        }
+        buf[i] = sb_buf(syncBuf)[sb_rc(syncBuf)];
+        sb_rc(syncBuf) = (sb_rc(syncBuf) + 1) % sb_bufSz(syncBuf);
         ReleaseSemaphore(syncBuf->hWriteSem, 1, NULL);
     }
     return n;
