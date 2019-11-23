@@ -13,6 +13,7 @@
 void logInfo(char* msg);
 void logWarn(char *msg);
 void logError(char* msg);
+void logFatal(char *msg);
 
 typedef struct _String {
     int len;

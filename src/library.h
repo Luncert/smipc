@@ -14,10 +14,10 @@
 
 typedef struct syncBuf {
     HANDLE hWriteSem, hReadSem;
+    char *buf;
     struct _shared {
-        unsigned char mark;
         int bufSz, rc, wc;
-        char *buf;
+        unsigned char mark;
     } *shared;
 } *SyncBuf;
 

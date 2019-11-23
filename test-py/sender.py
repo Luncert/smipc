@@ -2,11 +2,12 @@ from smipc import *
 
 cid = b'test-chan'
 
-initLibrary()
-openChannel(cid, CHAN_W, 128)
+init_library()
 
-writeChannel(cid, b"test/id=1", 9)
-printChannelStatus(cid)
+with open_channel(cid, CHAN_W, 128) as c:
+    c.print_status()
+    for i in range(3):
+        c.write("test/id=" + str(i))
+        c.print_status()
 
-closeChannel(cid)
-cleanLibrary()
+clean_library()

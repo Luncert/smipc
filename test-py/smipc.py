@@ -1,45 +1,73 @@
 from ctypes import *
 
-__lib = CDLL("../src/cmake-build-debug/libsmipc.dll")
+_lib = CDLL("../src/cmake-build-debug/libsmipc.dll")
 
-OP_SUCCEED = 0
-OP_FAILED = -1
-OPPOSITE_END_CLOSED = -2
+_OP_SUCCEED = 0
+_OP_FAILED = -1
+_OPPOSITE_END_CLOSED = -2
 
 CHAN_R = 0
 CHAN_W = 1
 
-def initLibrary():
-    __lib.initLibrary()
 
-def cleanLibrary():
-    __lib.cleanLibrary()
+def init_library():
+    _lib.initLibrary()
 
-__openChannel = __lib.openChannel
-__openChannel.argtypes = [c_char_p, c_int, c_int]
-__openChannel.restype = c_int
-def openChannel(cid, mode, chanSz=128):
-    return __openChannel(cid, mode, chanSz)
 
-__writeChannel = __lib.writeChannel
-__writeChannel.argtypes = [c_char_p, c_char_p, c_int]
-__writeChannel.restype = c_int
-def writeChannel(cid, data, len):
-    return __writeChannel(cid, data, len)
+def clean_library():
+    _lib.cleanLibrary()
 
-__readChannel = __lib.readChannel
-__readChannel.argtypes = [c_char_p, c_char_p, c_int, c_int]
-def readChannel(cid, buf, n, blocking=False):
-    return __readChannel(cid, buf, n, 1 if blocking else 0)
 
-__printChannelStatus = __lib.printChannelStatus
-__printChannelStatus.argtypes = [c_char_p]
-__printChannelStatus.restype = c_int
-def printChannelStatus(cid):
-    return __printChannelStatus(cid)
+def _check_ret(ret, msg):
+    if ret != _OP_SUCCEED:
+        raise Exception(msg + ' Ret=' + str(ret))
 
-__closeChannel = __lib.closeChannel
-__closeChannel.argtypes = [c_char_p]
-__closeChannel.restype = c_int
-def closeChannel(cid):
-    return __closeChannel(cid)
+
+class __Channel(object):
+    def __init__(self, cid, mode, chan_sz=128):
+        self.cid = cid
+        self.mode = mode
+        self.chan_sz = chan_sz
+
+    def __enter__(self):
+        ret = _lib.openChannel(self.cid, self.mode, self.chan_sz)
+        _check_ret(ret, "Failed to open channel.")
+        return self
+
+    def write(self, data):
+        if isinstance(data, str):
+            data = data.encode('utf-8')
+        elif not isinstance(data, bytes):
+            raise Exception('Invalid argument, data must be str or bytes.')
+        ret = _lib.writeChannel(self.cid, data, len(data))
+        if ret == _OPPOSITE_END_CLOSED:
+            raise Exception("Opposite end has been closed.")
+        elif ret == _OP_FAILED:
+            raise Exception("Failed to write channel.")
+
+    def read(self, buf, n, blocking=False):
+        """
+        read channel
+        :param buf: buf (create by ctypes.create_string_buffer)
+        :param n: num bytes wanna read
+        :param blocking: True or False
+        :return: num bytes read
+        """
+        ret = _lib.readChannel(self.cid, buf, n, 1 if blocking else 0)
+        if ret == _OPPOSITE_END_CLOSED:
+            raise Exception("Opposite end has been closed.")
+        elif ret == _OP_FAILED:
+            raise Exception("Failed to write channel.")
+        return n
+
+    def print_status(self):
+        ret = _lib.printChannelStatus(self.cid)
+        _check_ret(ret, "Failed to print channel status.")
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        ret = _lib.closeChannel(self.cid)
+        _check_ret(ret, "Failed to close channel.")
+
+
+def open_channel(cid, mode, chan_sz):
+    return __Channel(cid, mode, chan_sz)

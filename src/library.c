@@ -18,8 +18,7 @@ const unsigned char MARK_WRITER_CLOSE    = 0b0001;
 #define set_writer_open(syncBuf)    (syncBuf->shared->mark |= MARK_WRITER_OPEN)
 #define set_reader_close(syncBuf)   (syncBuf->shared->mark |= MARK_READER_CLOSE)
 #define set_writer_close(syncBuf)   (syncBuf->shared->mark |= MARK_WRITER_CLOSE)
-#define get_buf_readable(syncBuf)   (syncBuf->shared->wc > syncBuf->shared->rc ? syncBuf->shared->wc - syncBuf->shared->rc : syncBuf->shared->bufSz + syncBuf->shared->wc - syncBuf->shared->rc)
-#define sb_buf(syncBuf) (syncBuf->shared->buf)
+#define get_buf_readable(syncBuf)   (syncBuf->shared->wc >= syncBuf->shared->rc ? syncBuf->shared->wc - syncBuf->shared->rc : syncBuf->shared->bufSz + syncBuf->shared->wc - syncBuf->shared->rc)
 #define sb_bufSz(syncBuf) (syncBuf->shared->bufSz)
 #define sb_rc(syncBuf) (syncBuf->shared->rc)
 #define sb_wc(syncBuf) (syncBuf->shared->wc)
@@ -286,7 +285,6 @@ SyncBuf newSyncBuf(char *shareMem, int bufSz, int mode, String semName, char isN
         }
         // rc and wc should be set zero and we have done that.
         syncBuf->shared->bufSz = bufSz;
-        syncBuf->shared->buf = shareMem + sizeof(struct _shared);
     } else {
         // check memory mark
         if (mode == CHAN_R) {
@@ -312,6 +310,8 @@ SyncBuf newSyncBuf(char *shareMem, int bufSz, int mode, String semName, char isN
         }
         // every attr of SyncBuf could be read from the share memory.
     }
+    // 由于共享内存的指针是从物理地址映射而来虚拟地址，所以在python和winexe两种环境中，这两个值可能不同.
+    syncBuf->buf = shareMem + sizeof(struct _shared);
     // create sem
     if (createRWSemaphore(semName, &syncBuf->hWriteSem, &syncBuf->hReadSem, syncBuf->shared->bufSz) != OP_SUCCEED) {
         return NULL;
@@ -354,13 +354,14 @@ int createRWSemaphore(String namePrefix, HANDLE *hWSem, HANDLE *hRSem, int count
 int writeSyncBuf(SyncBuf syncBuf, const char *data, int len) {
     for (int i = 0; i < len;) {
         if (is_reader_close(syncBuf)) {
+            logError("Opposite end has been closed.");
             return OPPOSITE_END_CLOSED;
         }
         if (WaitForSingleObject(syncBuf->hWriteSem, INFINITE) == WAIT_FAILED) {
             logError("Failed to wait write sem.");
             return OP_FAILED;
         }
-        sb_buf(syncBuf)[sb_wc(syncBuf)] = data[i++];
+        syncBuf->buf[sb_wc(syncBuf)] = data[i++];
         sb_wc(syncBuf) = (sb_wc(syncBuf) + 1) % sb_bufSz(syncBuf);
         ReleaseSemaphore(syncBuf->hReadSem, 1, NULL);
     }
@@ -373,6 +374,7 @@ int readSyncBuf(SyncBuf syncBuf, char *buf, int n) {
     }
     int readable = get_buf_readable(syncBuf);
     if (readable == 0 && is_writer_close(syncBuf)) {
+        logError("Opposite end has been closed.");
         return OPPOSITE_END_CLOSED;
     }
     if (n > readable) {
@@ -383,7 +385,7 @@ int readSyncBuf(SyncBuf syncBuf, char *buf, int n) {
             logError("Failed to wait read sem.");
             return OP_FAILED;
         }
-        buf[i] = syncBuf->shared->buf[syncBuf->shared->rc];
+        buf[i] = syncBuf->buf[syncBuf->shared->rc];
         syncBuf->shared->rc = (syncBuf->shared->rc + 1) % syncBuf->shared->bufSz;
         ReleaseSemaphore(syncBuf->hWriteSem, 1, NULL);
     }
@@ -406,7 +408,7 @@ int readSyncBufB(SyncBuf syncBuf, char *buf, int n) {
             logError("Failed to wait read sem.");
             return OP_FAILED;
         }
-        buf[i] = sb_buf(syncBuf)[sb_rc(syncBuf)];
+        buf[i] = syncBuf->buf[sb_rc(syncBuf)];
         sb_rc(syncBuf) = (sb_rc(syncBuf) + 1) % sb_bufSz(syncBuf);
         ReleaseSemaphore(syncBuf->hWriteSem, 1, NULL);
     }

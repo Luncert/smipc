@@ -6,17 +6,32 @@
 void testString() {
     printf("[test String]\n");
     String s1 = parseConstToString("Hi");
-    String s2 = parseToString("Luncert", 3);
+    if (s1->len != 2 || s1->cap != 2 || memcmp(s1->val, "Hi", 2) != 0) {
+        logFatal("Test failed 1: s1.");
+    }
     appendString(s1, ", ", 2);
+    if (s1->len != 4 || s1->cap != 7 || memcmp(s1->val, "Hi, ", 4) != 0) {
+        logFatal("Test failed 2: s1.");
+    }
+    String s2 = parseToString("Luncert", 3);
+    if (s2->len != 3 || s2->cap != 3 || memcmp(s2->val, "Lun", 3) != 0) {
+        logFatal("Test failed 3: s2.");
+    }
     appendString(s2, "!", 1);
+    if (s2->len != 4 || s2->cap != 7 || memcmp(s2->val, "Lun!", 4) != 0) {
+        logFatal("Test failed 4: s2.");
+    }
     String s3 = concatString(s1, s2);
-    printf("s1=%s\ns2=%s\ns3=%s\n", s1->val, s2->val, s3->val);
+    if (s3->len != 8 || s3->cap != 8 || memcmp(s3->val, "Hi, Lun!", 8) != 0) {
+        logFatal("Test failed 5: s3.");
+    }
     releaseString(s1);
     releaseString(s2);
     releaseString(s3);
+    printf("All passed.\n");
 }
 
-char *cid = "test-channel";
+char *cid = "test-chan";
 
 void reader() {
     logInfo("Start as reader.");

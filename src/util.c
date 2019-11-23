@@ -17,8 +17,13 @@ void logWarn(char *msg) {
     printf("[WARN] %s\n", msg);
 }
 
-void logError(char* msg) {
+void logError(char *msg) {
     printf("[ERROR] %s\n", msg);
+}
+
+void logFatal(char *msg) {
+    printf("[FATAL] %s\n", msg);
+    exit(-1);
 }
 
 // String
@@ -27,45 +32,36 @@ String newEmptyString(int cap) {
     if (cap <= 0) {
         cap = 0;
     }
-    String r = (String) malloc(sizeof(struct _String));
+    String r = (String)malloc(sizeof(struct _String));
     r->len = 0;
     r->cap = cap;
-    r->val = (char*)malloc(r->cap + 1);
+    r->val = (char*)malloc(r->len + 1);
     memset(r->val, 0, r->cap);
     return r;
 }
 
 String parseConstToString(const char *raw) {
     int len = 0;
-    while (raw[len] != '\0') {
-        len++;
-    }
+    while (raw[++len] != '\0');
     return parseToString((char*)raw, len);
 }
 
 String parseToString(const char *raw, int len) {
-    String r = (String) malloc(sizeof(struct _String));
+    String r = (String)malloc(sizeof(struct _String));
     r->cap = r->len = len;
-    r->val = (char*)malloc(len);
-
-    for (int i = 0; i < len; i++) {
-        r->val[i] = raw[i];
-    }
+    r->val = (char*)malloc(r->len + 1);
+    memcpy(r->val, raw, len);
     r->val[r->len] = 0;
     return r;
 }
 
 String cloneString(String s) {
-    String r = (String) malloc(sizeof(struct _String));
+    String r = (String)malloc(sizeof(struct _String));
     r->len = s->len;
     r->cap = s->cap;
     r->val = (char*)malloc(s->len + 1);
-
-    for (int i = 0; i < r->len; i++) {
-        r->val[i] = s->val[i];
-    }
+    memcpy(r->val, s->val, r->len);
     r->val[r->len] = 0;
-
     return r;
 }
 
@@ -77,37 +73,20 @@ void appendString(String s, const char *t, int len) {
         char *val = s->val;
         s->cap = (int)((s->len + len) * 1.5) + 1;
         s->val = (char*)malloc(s->cap + 1);
-
-        int i = 0;
-        for (; i < s->len; i++) {
-            s->val[i] = val[i];
-        }
+        memcpy(s->val, val, s->len);
         free(val);
-
-        for (int limit = s->len + len; i < limit; i++) {
-            s->val[i] = t[i - s->len];
-        }
-        s->len += len;
-        s->val[s->len] = 0;
-    } else {
-        for (int i = 0; i < len; i++) {
-            s->val[s->len++] = t[i];
-        }
     }
+    memcpy(s->val + s->len, t, len);
+    s->len += len;
+    s->val[s->len] = 0;
 }
 
 String appendToNewString(String s, const char *t, int len) {
     String r = (String)malloc(sizeof(struct _String));
     r->cap = r->len = s->len + len;
-    r->val = (char*)malloc(r->cap);
-
-    int i = 0;
-    for (; i < s->len; i++) {
-        r->val[i] = s->val[i];
-    }
-    for (; i < r->len; i++) {
-        r->val[i] = t[i - s->len];
-    }
+    r->val = (char*)malloc(r->len + 1);
+    memcpy(r->val, s->val, s->len);
+    memcpy(r->val + s->len, t, len);
     r->val[r->len] = 0;
     return r;
 }
@@ -120,12 +99,7 @@ int equalString(String a, String b) {
     if (a->len != b->len) {
         return FALSE;
     }
-    for (int i = 0; i < a->len; i++) {
-        if (a->val[i] != b->val[i]) {
-            return FALSE;
-        }
-    }
-    return TRUE;
+    return memcmp(a->val, b->val, a->len) == 0 ? TRUE : FALSE;
 }
 
 void releaseString(String s) {
