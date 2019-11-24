@@ -9,21 +9,55 @@
 
 // log
 
+const char *logLevelNames[] = {"DEBUG", "INFO", "WARN", "ERROR", "FATAL"};
+int logLevel = LOG_DEBUG;
+
+void setLogLevel(int l) {
+    if (l < LOG_DEBUG || l > LOG_DISABLE) {
+        printf("[ERROR] Invalid log level value %d.\n", l);
+        return;
+    }
+    logLevel = l;
+}
+
+int allowLog(int level) {
+   return level >= logLevel;
+}
+
+void _log(int l, char *msg) {
+    if (l >= logLevel) {
+        printf("[%s] %s\n", logLevelNames[l], msg);
+    }
+}
+
+void logDebug(char *msg) {
+    _log(LOG_DEBUG, msg);
+}
+
 void logInfo(char* msg) {
-    printf("[INFO] %s\n", msg);
+    _log(LOG_INFO, msg);
 }
 
 void logWarn(char *msg) {
-    printf("[WARN] %s\n", msg);
+    _log(LOG_WARN, msg);
 }
 
 void logError(char *msg) {
-    printf("[ERROR] %s\n", msg);
+    _log(LOG_ERROR, msg);
 }
 
 void logFatal(char *msg) {
-    printf("[FATAL] %s\n", msg);
+    _log(LOG_FATAL, msg);
     exit(-1);
+}
+
+void logWinError(char *msg) {
+    if (LOG_ERROR >= logLevel) {
+        void * lpMsgBuf;
+        FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                       NULL, GetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (char *)&lpMsgBuf, 0, NULL);
+        printf("[ERROR] %s%s", msg, lpMsgBuf);
+    }
 }
 
 // String

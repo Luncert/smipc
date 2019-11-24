@@ -2,6 +2,7 @@
 #include <util.h>
 #include <string.h>
 #include <library.h>
+#include <time.h>
 
 void testString() {
     printf("[test String]\n");
@@ -35,7 +36,6 @@ char *cid = "test-chan";
 
 void reader() {
     logInfo("Start as reader.");
-    initLibrary();
     if (openChannel(cid, CHAN_R, 128) != OP_SUCCEED) {
         return;
     }
@@ -44,18 +44,15 @@ void reader() {
     printChannelStatus(cid);
 
     for (int i = 0; i < 3; i++) {
-        readChannel(cid, buf, 9, TRUE);
-        printf("READER:%s\n", buf);
+        int ret = readChannel(cid, buf, 9, TRUE);
+        printf("READ:%s RET:%d\n", buf, ret);
         printChannelStatus(cid);
     }
 
     closeChannel(cid);
-    cleanLibrary();
 }
 
 void writer() {
-    logInfo("Start as writer.");
-    initLibrary();
     if (openChannel(cid, CHAN_W, 128) != OP_SUCCEED) {
         return;
     }
@@ -68,26 +65,87 @@ void writer() {
     };
     for (int i = 0; i < 3; i++) {
         writeChannel(cid, data[i], 9);
-        printf("WRITER:done.\n");
         printChannelStatus(cid);
         Sleep(1000);
     }
 
     closeChannel(cid);
-    cleanLibrary();
+}
+
+void benchmark_reader() {
+    struct timeb st, et;
+
+    int frameSz = 1920 * 1080;
+    int chanSz = frameSz * 3;
+
+    // prepare test buf
+    char *buf = (char*)malloc(frameSz);
+    buf[0] = 0;
+    buf[frameSz - 1] = 0;
+
+    if (openChannel(cid, CHAN_R, chanSz) != OP_SUCCEED) {
+        return;
+    }
+    printChannelStatus(cid);
+    for (int i = 0; i < 3; i++) {
+        ftime(&st);
+        int ret = readChannel(cid, buf, frameSz, TRUE);
+        ftime(&et);
+        printf("RET:%d buf[0]:%d buf[-1]:%d rt: %dms\n", ret, buf[0], buf[frameSz - 1], et.millitm - st.millitm);
+        printChannelStatus(cid);
+        // reset
+        buf[0] = 0;
+        buf[frameSz - 1] = 0;
+    }
+    closeChannel(cid);
+
+    free(buf);
+}
+
+void benchmark_writer() {
+    struct timeb st, et;
+
+    int frameSz = 1920 * 1080;
+    int chanSz = frameSz * 3;
+
+    // prepare test data
+    char *data = (char*)malloc(frameSz);
+    data[0] = 0x8;
+    data[frameSz - 1] = 0xf;
+
+    if (openChannel(cid, CHAN_W, chanSz) != OP_SUCCEED) {
+        return;
+    }
+    printChannelStatus(cid);
+    for (int i = 0; i < 3; i++) {
+        ftime(&st);
+        writeChannel(cid, data, frameSz);
+        ftime(&et);
+        printf("wt: %dms\n", et.millitm - st.millitm);
+        printChannelStatus(cid);
+    }
+    closeChannel(cid);
+
+    free(data);
 }
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         return -1;
     }
+    initLibrary(TRUE);
     if (strcmp("-w", argv[1]) == 0) {
         writer();
     } else if (strcmp("-r", argv[1]) == 0) {
         reader();
-    } else {
-        logError("Invalid parameter.");
-        return -1;
+    } else if (strcmp("-bw", argv[1]) == 0) {
+        benchmark_writer();
+    } else if (strcmp("-br", argv[1]) == 0) {
+        benchmark_reader();
     }
+    else {
+        logError("Invalid parameter.");
+    }
+    cleanLibrary();
     return 0;
 }

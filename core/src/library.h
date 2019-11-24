@@ -13,11 +13,11 @@
 #define CHAN_W 1
 
 typedef struct syncBuf {
-    HANDLE hWriteSem, hReadSem;
+    HANDLE hWEvt, hREvt;
     char *buf;
     struct _shared {
         int bufSz, rc, wc;
-        unsigned char mark;
+        unsigned char state, mark;
     } *shared;
 } *SyncBuf;
 
@@ -27,21 +27,12 @@ typedef struct channel {
     SyncBuf syncBuf;
 } *Channel;
 
-void initLibrary();
+void initLibrary(int isTraceMode);
 void cleanLibrary();
 int openChannel(char *cid, int mode, int chanSz);
 int writeChannel(char *cid, char *data, int len);
 int readChannel(char *cid, char *buf, int n, char blocking);
 int printChannelStatus(char *cid);
 int closeChannel(char *cid);
-
-int createRWSemaphore(String namePrefix, HANDLE *hRSem, HANDLE *hWSem, int count);
-SyncBuf newSyncBuf(char *shareMem, int memSz, int mode, String semName, char isNewMem);
-int writeSyncBuf(SyncBuf syncBuf, const char *data, int len);
-int readSyncBuf(SyncBuf syncBuf, char *buf, int n);
-int readSyncBufB(SyncBuf syncBuf, char *buf, int n);
-
-HANDLE lock(String mutexName);
-void unlock(HANDLE mutex);
 
 #endif //SMIPC_LIBRARY_H

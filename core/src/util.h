@@ -10,10 +10,25 @@
 #define TRUE 1
 #define FALSE 0
 
+// log
+
+#define LOG_DEBUG   0
+#define LOG_INFO    1
+#define LOG_WARN    2
+#define LOG_ERROR   3
+#define LOG_FATAL   4
+#define LOG_DISABLE 5
+
+void setLogLevel(int l);
+int allowLog(int level);
+void logDebug(char *msg);
 void logInfo(char* msg);
 void logWarn(char *msg);
 void logError(char* msg);
 void logFatal(char *msg);
+void logWinError(char *msg);
+
+// string
 
 typedef struct _String {
     int len;
