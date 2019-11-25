@@ -5,24 +5,15 @@
 #include "util.h"
 #include "library.h"
 
-SyncBuf newSyncBuf(char *shareMem, int bufSz, int mode, String semName, char isNewMem);
-int initSyncBufEvent(String namePrefix, HANDLE *hREvt, HANDLE *hWEvt);
-int writeSyncBuf(SyncBuf syncBuf, const char *data, int sz);
-int readSyncBuf(SyncBuf syncBuf, char *buf, int n);
-int readSyncBufB(SyncBuf s, char *buf, int n);
-
-HANDLE lock(String mutexName);
-void unlock(HANDLE mutex);
-
 const u_char MARK_READER_OPEN     = 0b1000;
 const u_char MARK_WRITER_OPEN     = 0b0100;
 const u_char MARK_READER_CLOSE    = 0b0010;
 const u_char MARK_WRITER_CLOSE    = 0b0001;
 
-const u_char STATE_WRITE_FULL   = 0x10;
-const u_char STATE_READ_FULL    = 0x01;
+const u_char STATE_FULL     = 0x10;
+const u_char STATE_EMPTY    = 0x01;
 
-#define MAX_CHAN_SZ 536870911l // =sizeof(long), it's limited by the CreateSemaphore's param
+#define MAX_CHAN_SZ 536870911L // =sizeof(long), it's limited by the CreateSemaphore's param
 
 #define is_reader_open(syncBuf)     (syncBuf->shared->mark & MARK_READER_OPEN)
 #define is_writer_open(syncBuf)     (syncBuf->shared->mark & MARK_WRITER_OPEN)
@@ -35,10 +26,10 @@ const u_char STATE_READ_FULL    = 0x01;
 #define sb_bufSz(syncBuf)           (syncBuf->shared->bufSz)
 #define sb_rc(syncBuf)              (syncBuf->shared->rc)
 #define sb_wc(syncBuf)              (syncBuf->shared->wc)
-#define is_write_all(syncBuf)       (syncBuf->shared->state & STATE_WRITE_FULL)
-#define is_read_all(syncBuf)        (syncBuf->shared->state & STATE_READ_FULL)
-#define set_write_all(syncBuf)      (syncBuf->shared->state = STATE_WRITE_FULL)
-#define set_read_all(syncBuf)       (syncBuf->shared->state = STATE_READ_FULL)
+#define is_buf_full(syncBuf)        (syncBuf->shared->state & STATE_FULL)
+#define is_buf_empty(syncBuf)       (syncBuf->shared->state & STATE_EMPTY)
+#define set_buf_full(syncBuf)       (syncBuf->shared->state = STATE_FULL)
+#define set_buf_empty(syncBuf)      (syncBuf->shared->state = STATE_EMPTY)
 
 typedef map_t(Channel) channel_map_t;
 
@@ -87,6 +78,10 @@ int openChannel(char *cid, int mode, int chanSz) {
         logError("Invalid channel mode, must be CHAN_R(0) or CHAN_W(1).");
         return OP_FAILED;
     }
+    if (chanSz <= 0) {
+        logError("Invalid chanSz, must be positive.");
+        return OP_FAILED;
+    }
 
     Channel channel, *p;
     p = map_get(channelMap, cid);
@@ -111,9 +106,6 @@ int openChannel(char *cid, int mode, int chanSz) {
             if (allowLog(LOG_WARN)) {
                 printf("[WARN] chanSz should be at most %ldBytes, auto adjusted.", MAX_CHAN_SZ);
             }
-        } else if (chanSz < 128) {
-            chanSz = 128;
-            logWarn("chanSz should be bigger than 128Bytes, auto adjusted.");
         }
         hShareMem = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, chanSz + sizeof(struct syncBuf), cid);
         // check error
@@ -180,36 +172,6 @@ int openChannel(char *cid, int mode, int chanSz) {
 }
 
 /**
- * writeChannel
- * @param cid channel id
- * @param data
- * @param len
- * @return OP_SUCCEED, OPPOSITE_END_CLOSED, OP_FAILED
- */
-int writeChannel(char *cid, char *data, int len) {
-    Channel channel, *p;
-    p = map_get(channelMap, cid);
-    if (p == NULL) {
-        logError("Channel doesn't exist, make sure open it at first.");
-        return OP_FAILED;
-    }
-    channel = *p;
-    // check channel's mode
-    if (channel->mode != CHAN_W) {
-        logError("Channel doesn't support write operation.");
-        return OP_FAILED;
-    }
-    if (len <= 0) {
-        logError("Invalid parameter, len should be positive.");
-        return OP_FAILED;
-    } else if (len > sb_bufSz(channel->syncBuf)) {
-        logWarn("Data shouldn't be bigger than channel, auto adjusted.");
-        len = sb_bufSz(channel->syncBuf);
-    }
-    return writeSyncBuf(channel->syncBuf, data, len);
-}
-
-/**
  * readChannel
  * @param cid channel id
  * @param buf
@@ -237,6 +199,34 @@ int readChannel(char *cid, char *buf, int n, char blocking) {
     }
 }
 
+/**
+ * writeChannel
+ * @param cid channel id
+ * @param data
+ * @param len
+ * @return OP_SUCCEED, OPPOSITE_END_CLOSED, OP_FAILED
+ */
+int writeChannel(char *cid, char *data, int len) {
+    Channel channel, *p;
+    p = map_get(channelMap, cid);
+    if (p == NULL) {
+        logError("Channel doesn't exist, make sure open it at first.");
+        return OP_FAILED;
+    }
+    channel = *p;
+
+    // check channel's mode
+    if (channel->mode != CHAN_W) {
+        logError("Channel doesn't support write operation.");
+        return OP_FAILED;
+    }
+    if (len <= 0) {
+        logError("Invalid parameter, len should be positive.");
+        return OP_FAILED;
+    }
+    return writeSyncBuf(channel->syncBuf, data, len);
+}
+
 int printChannelStatus(char *cid) {
     Channel channel, *p;
     p = map_get(channelMap, cid);
@@ -256,7 +246,8 @@ int printChannelStatus(char *cid) {
     printf(" WC=%c", is_writer_close(syncBuf) ? '1' : '0');
     printf(" hREvt=%s", syncBuf->hREvt != NULL ? "valid" : "invalid");
     printf(" hWEvt=%s", syncBuf->hWEvt != NULL ? "valid" : "invalid");
-    printf(" bufSz=%d readCursor=%d writeCursor=%d", syncBuf->shared->bufSz, syncBuf->shared->rc, syncBuf->shared->wc);
+    printf(" bufSz=%d rc=%d wc=%d", syncBuf->shared->bufSz, syncBuf->shared->rc, syncBuf->shared->wc);
+    printf(" state=%s", is_buf_empty(syncBuf) ? "empty" : (is_buf_full(syncBuf) ? "full" : "normal"));
     printf("}\n");
     return OP_SUCCEED;
 }
@@ -322,7 +313,7 @@ SyncBuf newSyncBuf(char *shareMem, int bufSz, int mode, String semName, char isN
         sb_bufSz(syncBuf) = bufSz;
         sb_rc(syncBuf) = 0;
         sb_wc(syncBuf) = 0;
-        set_read_all(syncBuf);
+        set_buf_empty(syncBuf);
         // set mark
         if (mode == CHAN_R) {
             set_reader_open(syncBuf);
@@ -398,9 +389,9 @@ int initSyncBufEvent(String namePrefix, HANDLE *hREvt, HANDLE *hWEvt) {
 
 int get_buf_readable(SyncBuf s) {
     if (sb_wc(s) == sb_rc(s)) {
-        if (is_write_all(s)) {
+        if (is_buf_full(s)) {
             return sb_bufSz(s);
-        } else if (is_read_all(s)) {
+        } else if (is_buf_empty(s)) {
             return 0;
         } else {
             logError("SyncBuf is in invalid state.");
@@ -409,144 +400,170 @@ int get_buf_readable(SyncBuf s) {
     } else if (sb_wc(s) > sb_rc(s)) {
         return sb_wc(s) - sb_rc(s);
     } else {
-        return sb_bufSz(s) - sb_rc(s) + sb_wc(s);
+        return sb_wc(s) + sb_bufSz(s) - sb_rc(s);
     }
 }
 
 int get_buf_writeable(SyncBuf s) {
     if (sb_wc(s) == sb_rc(s)) {
-        if (is_write_all(s)) {
+        if (is_buf_full(s)) {
             return 0;
-        } else if (is_read_all(s)) {
+        } else if (is_buf_empty(s)) {
             return sb_bufSz(s);
         } else {
             logError("SyncBuf is in invalid state.");
             return -1;
         }
     } else if (sb_wc(s) > sb_rc(s)) {
-        return sb_bufSz(s) - sb_wc(s) + sb_rc(s);
+        return sb_rc(s) + sb_bufSz(s) - sb_wc(s);
     } else {
         return sb_rc(s) - sb_wc(s);
     }
 }
 
-#include <time.h>
+// 我一开始把这两个函数写成了宏定义的，但是总是有两个字节会写出错；结果改成函数调用就没问题了。。。
+inline void sb_read_n(SyncBuf s, char *buf, int n) {
+    int t = sb_bufSz(s) - sb_rc(s);
+    if (t < n) {
+        memcpy(buf, s->buf + sb_rc(s), t);
+        memcpy(buf + t, s->buf, n - t);
+    } else {
+        memcpy(buf, s->buf + sb_rc(s), n);
+    }
+}
 
-int writeSyncBuf(SyncBuf s, const char *data, int sz) {
-    if (sz <= 0) {
+inline void sb_write_n(SyncBuf s, char *data, int n) {
+    int t = sb_bufSz(s) - sb_wc(s);
+    if (t < n) {
+        memcpy(s->buf + sb_wc(s), data, t);
+        memcpy(s->buf, data + t, n - t);
+    } else {
+        memcpy(s->buf + sb_wc(s), data, n);
+    }
+}
+
+inline int sb_inc_rc(SyncBuf s, int delta) {
+    sb_rc(s) = (sb_rc(s) + delta) % sb_bufSz(s);
+    if (sb_rc(s) == sb_wc(s)) {
+        set_buf_empty(s);
+#ifdef SMIPC_TRACE
+        printf("[TRACE] read: buffer -> empty.\n");
+#endif
+    }
+    if (!SetEvent(s->hREvt)) {
+        logWinError("Failed to set read event.");
+        return OP_FAILED;
+    }
+#ifdef SMIPC_TRACE
+    printf("[TRACE] read: set RE.\n");
+#endif
+    return OP_SUCCEED;
+}
+
+inline int sb_inc_wc(SyncBuf s, int delta) {
+    sb_wc(s) = (sb_wc(s) + delta) % sb_bufSz(s);
+    if (sb_rc(s) == sb_wc(s)) {
+        set_buf_full(s);
+#ifdef SMIPC_TRACE
+        printf("[TRACE] write: buffer -> full.\n");
+#endif
+    }
+    if (!SetEvent(s->hWEvt)) {
+        logWinError("Failed to set write event.");
+        return OP_FAILED;
+    }
+#ifdef SMIPC_TRACE
+    printf("[TRACE] write: set WE.\n");
+#endif
+    return OP_SUCCEED;
+}
+
+int readSyncBuf(SyncBuf s, char *buf, int sz) {
+    int n = get_buf_readable(s);
+    if (n == 0) {
+        if (is_writer_close(s)) {
+            logError("Opposite end has been closed.");
+            return OPPOSITE_END_CLOSED;
+        }
         return 0;
     }
+    if (n > sz) {
+        n = sz;
+    }
+    sb_read_n(s, buf, n);
+    sb_inc_rc(s, n);
+    return n;
+}
+
+// NOTE: be careful to read writer's data in reader (You may read dirty data).
+int readSyncBufB(SyncBuf s, char *buf, int sz) {
+    int offset = 0;
+    while (sz > 0) {
+        int n = get_buf_readable(s);
+        // wait for write event
+        if (n == 0) {
+            if (is_writer_close(s)) {
+                logError("Opposite end has been closed.");
+                return OPPOSITE_END_CLOSED;
+            } else if (WaitForSingleObject(s->hWEvt, INFINITE) != WAIT_OBJECT_0) {
+                logWinError("Failed to wait for write event.");
+                return OP_FAILED;
+            }
+#ifdef SMIPC_TRACE
+            printf("[TRACE] read: got WE.\n");
+#endif
+        } else {
+#ifdef SMIPC_TRACE
+            printf("[TRACE] read: in[sz=%d ava=%d buf=%p off=%d] rc=%d.\n", sz, n, buf, offset, sb_rc(s));
+#endif
+            if (n > sz) {
+                n = sz;
+            }
+            sb_read_n(s, buf + offset, n);
+            if (sb_inc_rc(s, n) != OP_SUCCEED) {
+                return OP_FAILED;
+            }
+            offset += n;
+            sz -= n;
+        }
+    }
+    return offset;
+}
+
+int writeSyncBuf(SyncBuf s, const char *data, int sz) {
     int offset = 0;
     while (sz > 0) {
         if (is_reader_close(s)) {
+            printf("%d\n", sz);
             logError("Opposite end has been closed.");
             return OPPOSITE_END_CLOSED;
         }
         int n = get_buf_writeable(s);
         // wait for read event
-        if (n == 0 && WaitForSingleObject(s->hREvt, INFINITE) != WAIT_OBJECT_0) {
-            logWinError("Failed to wait for read event.");
-            return OP_FAILED;
+        if (n == 0) {
+            if (WaitForSingleObject(s->hREvt, INFINITE) != WAIT_OBJECT_0) {
+                logWinError("Failed to wait for read event.");
+                return OP_FAILED;
+            }
+#ifdef SMIPC_TRACE
+            printf("[TRACE] write: got RE.\n");
+#endif
         } else {
+#ifdef SMIPC_TRACE
+            printf("[TRACE] write: in[sz=%d ava=%d data=%p off=%d] wc=%d\n", sz, n, data, offset, sb_wc(s));
+#endif
             if (n > sz) {
                 n = sz;
             }
-            // write n
-            memcpy(s->buf + sb_wc(s), data + offset, n);
-            sb_wc(s) = (sb_wc(s) + n) % sb_bufSz(s);
-            offset += n;
-            sz -= n;
-            // update buf state
-            if (sb_wc(s) == sb_rc(s)) {
-                set_write_all(s);
-            }
-            // set write event
-            if (!SetEvent(s->hWEvt)) {
-                logWinError("Failed to set write event.");
+            sb_write_n(s, (char*)data + offset, n);
+            if (sb_inc_wc(s, n) != OP_SUCCEED) {
                 return OP_FAILED;
             }
+            offset += n;
+            sz -= n;
         }
     }
-
     return OP_SUCCEED;
-}
-
-int readSyncBuf(SyncBuf s, char *buf, int n) {
-    if (n <= 0) {
-        return 0;
-    }
-    int readable = get_buf_readable(s);
-    if (readable == 0) {
-        if (is_writer_close(s)) {
-            logError("Opposite end has been closed.");
-            return OPPOSITE_END_CLOSED;
-        }
-        return 0;
-    }
-    if (n > readable) {
-        n = readable;
-    }
-    // read n
-    memcpy(buf, s->buf + sb_rc(s), n);
-    sb_rc(s) = (sb_rc(s) + n) % sb_bufSz(s);
-    if (sb_rc(s) == sb_wc(s)) {
-        set_read_all(s);
-    }
-    // set read event
-    if (!SetEvent(s->hREvt)) {
-        logWinError("Failed to set read event.");
-    }
-    return n;
-}
-
-int readSyncBufB(SyncBuf s, char *buf, int sz) {
-    if (sz <= 0) {
-        return 0;
-    }
-    int offset = 0;
-    while (sz > 0) {
-        if (is_writer_close(s)) {
-            // read the rest
-            int n = get_buf_readable(s);
-            if (n >= sz) {
-                n = sz;
-            }
-            // read n
-            memcpy(buf + offset, s->buf + sb_rc(s), n);
-            sb_rc(s) = (sb_rc(s) + n) % sb_bufSz(s);
-            offset += n;
-            if (n == sz) {
-                return offset;
-            } else {
-                return OPPOSITE_END_CLOSED;
-            }
-        }
-        int n = get_buf_readable(s);
-        // wait for write event
-        if (n == 0 && WaitForSingleObject(s->hWEvt, INFINITE) != WAIT_OBJECT_0) {
-            logWinError("Failed to wait for write event.");
-            return OP_FAILED;
-        } else {
-            if (n > sz) {
-                n = sz;
-            }
-            // read n
-            memcpy(buf + offset, s->buf + sb_rc(s), n);
-            sb_rc(s) = (sb_rc(s) + n) % sb_bufSz(s);
-            offset += n;
-            sz -= n;
-            // update buf state
-            if (sb_rc(s) == sb_wc(s)) {
-                set_read_all(s);
-            }
-            // set write event
-            if (!SetEvent(s->hREvt)) {
-                logWinError("Failed to set read event.");
-                return OP_FAILED;
-            }
-        }
-    }
-    return offset;
 }
 
 // Mutex

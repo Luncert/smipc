@@ -3,7 +3,7 @@ project(smipctest C)
 
 set(CMAKE_C_STANDARD 99)
 
-set(LINK_DIR C:/Workspace/Project/smipc/core/src)
+set(LINK_DIR ../src)
 include_directories(${LINK_DIR})
-add_executable(smipctest main.c ${LINK_DIR}/library.c ${LINK_DIR}/library.h ${LINK_DIR}/util.c ${LINK_DIR}/util.h  ${LINK_DIR}/map.c ${LINK_DIR}/map.h)
+add_executable(smipctest main.c ${LINK_DIR}/library.c ${LINK_DIR}/library.h ${LINK_DIR}/util.c ${LINK_DIR}/util.h  ${LINK_DIR}/map.c ${LINK_DIR}/map.h crc.c crc.h)
 
