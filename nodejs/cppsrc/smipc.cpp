@@ -30,6 +30,27 @@ func_closeChannel _closeChannel;
 
 HMODULE module;
 
+void LoadSmipc(const CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "Invalid parameter, (bool isTraceMode).")
+            .ThrowAsJavaScriptException();
+    }
+    std::string dllPath = info[0].As<String>().Utf8Value();
+    module = LoadLibrary(dllPath.c_str());
+    if (module == NULL) {
+        printf("[ERROR] Failed to load libsmipc.dll\n");
+        return;
+    }
+    _initLibrary = (func_initLibrary)GetProcAddress(module, "initLibrary");
+    _cleanLibrary = (func_cleanLibrary)GetProcAddress(module, "cleanLibrary");
+    _openChannel = (func_openChannel)GetProcAddress(module, "openChannel");
+    _writeChannel = (func_writeChannel)GetProcAddress(module, "writeChannel");
+    _readChannel = (func_readChannel)GetProcAddress(module, "readChannel");
+    _printChannelStatus = (func_printChannelStatus)GetProcAddress(module, "printChannelStatus");
+    _closeChannel = (func_closeChannel)GetProcAddress(module, "closeChannel");
+}
+
 void Init(const CallbackInfo& info) {
     Napi::Env env = info.Env();
     if (info.Length() < 1 || !info[0].IsBoolean()) {
@@ -110,19 +131,6 @@ Boolean CloseChannel(const CallbackInfo& info) {
 }
 
 Object Initialize(Env env, Object exports) {
-    module = LoadLibrary("./lib/libsmipc.dll");
-    if (module == NULL) {
-        printf("[ERROR] Failed to load libsmipc.dll\n");
-        return exports;
-    }
-    _initLibrary = (func_initLibrary)GetProcAddress(module, "initLibrary");
-    _cleanLibrary = (func_cleanLibrary)GetProcAddress(module, "cleanLibrary");
-    _openChannel = (func_openChannel)GetProcAddress(module, "openChannel");
-    _writeChannel = (func_writeChannel)GetProcAddress(module, "writeChannel");
-    _readChannel = (func_readChannel)GetProcAddress(module, "readChannel");
-    _printChannelStatus = (func_printChannelStatus)GetProcAddress(module, "printChannelStatus");
-    _closeChannel = (func_closeChannel)GetProcAddress(module, "closeChannel");
-
     exports.Set("OP_SUCCEED", Number::New(env, OP_SUCCEED));
     exports.Set("OP_FAILED", Number::New(env, OP_FAILED));
     exports.Set("OPPOSITE_END_CLOSED", Number::New(env, OPPOSITE_END_CLOSED));
@@ -130,6 +138,7 @@ Object Initialize(Env env, Object exports) {
     exports.Set("CHAN_R", Number::New(env, CHAN_R));
     exports.Set("CHAN_W", Number::New(env, CHAN_W));
 
+    exports.Set("loadSmipc", Function::New(env, LoadSmipc));
     exports.Set("init", Function::New(env, Init));
     exports.Set("deinit", Function::New(env, Deinit));
     exports.Set("openChannel", Function::New(env, OpenChannel));
