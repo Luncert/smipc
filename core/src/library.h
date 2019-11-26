@@ -14,6 +14,8 @@
 
 //#define SMIPC_TRACE
 
+typedef void (*Callback)(char *data, int sz);
+
 typedef struct syncBuf {
     HANDLE hWEvt, hREvt;
     char *buf;
@@ -23,10 +25,22 @@ typedef struct syncBuf {
     } *shared;
 } *SyncBuf;
 
-typedef struct channel {
-    HANDLE hShareMem;
-    int mode;
+typedef struct dataListener {
+    DWORD threadID;
+    HANDLE hThread, hStopEvt1, hStopEvt2;
+} *DataListener;
+
+typedef struct asyncReadInfo {
     SyncBuf syncBuf;
+    HANDLE hStopEvt1, hStopEvt2;
+    Callback callback;
+} *AsyncReadInfo;
+
+typedef struct channel {
+    int mode;
+    HANDLE hShareMem;
+    SyncBuf syncBuf;
+    DataListener dataListener;
 } *Channel;
 
 void initLibrary(int isTraceMode);
@@ -34,16 +48,20 @@ void cleanLibrary();
 int openChannel(char *cid, int mode, int chanSz);
 int writeChannel(char *cid, char *data, int len);
 int readChannel(char *cid, char *buf, int n, char blocking);
+int onChannelData(char *cid, Callback callback);
+int removeListener(char *cid);
 int printChannelStatus(char *cid);
-int closeChannel(char *cid);
+void closeChannel(char *cid);
 
 SyncBuf newSyncBuf(char *shareMem, int bufSz, int mode, String semName, char isNewMem);
 int initSyncBufEvent(String namePrefix, HANDLE *hREvt, HANDLE *hWEvt);
 int get_buf_readable(SyncBuf s);
 int get_buf_writeable(SyncBuf s);
-int writeSyncBuf(SyncBuf syncBuf, const char *data, int sz);
+int asyncReadRoutine(LPVOID lpParam);
 int readSyncBuf(SyncBuf syncBuf, char *buf, int sz);
 int readSyncBufB(SyncBuf s, char *buf, int sz);
+int writeSyncBuf(SyncBuf syncBuf, const char *data, int sz);
+int releaseSyncBuf(SyncBuf s, int mode);
 
 HANDLE lock(String mutexName);
 void unlock(HANDLE mutex);

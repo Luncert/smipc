@@ -163,6 +163,7 @@ int openChannel(char *cid, int mode, int chanSz) {
     channel->mode = mode;
     channel->hShareMem = hShareMem;
     channel->syncBuf = syncBuf;
+    channel->dataListener = NULL;
     map_set(channelMap, cid, channel);
 
     // unlock
@@ -187,6 +188,12 @@ int readChannel(char *cid, char *buf, int n, char blocking) {
         return OP_FAILED;
     }
     channel = *p;
+
+    if (channel->dataListener != NULL) {
+        logError("Read operation isn't allowed while listener is enable.");
+        return OP_FAILED;
+    }
+
     // check channel's mode
     if (channel->mode != CHAN_R) {
         logError("Channel doesn't support read operation.");
@@ -197,6 +204,106 @@ int readChannel(char *cid, char *buf, int n, char blocking) {
     } else {
         return readSyncBuf(channel->syncBuf, buf, n);
     }
+}
+
+/**
+ * Create listener to read data asynchronously.
+ * @param cid
+ * @param buf
+ * @param n
+ * @param callback
+ * @return
+ */
+int onChannelData(char *cid, Callback callback) {
+    Channel channel, *p;
+    p = map_get(channelMap, cid);
+    if (p == NULL) {
+        logError("Channel doesn't exist, make sure open it at first.");
+        return OP_FAILED;
+    }
+    channel = *p;
+
+    // check channel's mode
+    if (channel->mode != CHAN_R) {
+        logError("Channel doesn't support read operation.");
+        return OP_FAILED;
+    }
+
+    if (channel->dataListener != NULL) {
+        logError("Another listener has bound to this channel.");
+        return OP_FAILED;
+    }
+
+    HANDLE hStopEvt1, hStopEvt2;
+    if ((hStopEvt1 = CreateEvent(NULL, FALSE, FALSE, NULL)) == INVALID_HANDLE_VALUE || hStopEvt1 == NULL) {
+        logError("Failed to create stop event1 for DataListener.");
+        return OP_FAILED;
+    } else if ((hStopEvt2 = CreateEvent(NULL, FALSE, FALSE, NULL)) == INVALID_HANDLE_VALUE || hStopEvt2 == NULL) {
+        CloseHandle(hStopEvt1);
+        logError("Failed to create stop event2 for DataListener.");
+        return OP_FAILED;
+    }
+
+    // free AsyncReadInfo in asyncReadRoutine (child thread)
+    AsyncReadInfo info = (AsyncReadInfo)malloc(sizeof(struct asyncReadInfo));
+    info->syncBuf = channel->syncBuf;
+    info->hStopEvt1 = hStopEvt1;
+    info->hStopEvt2 = hStopEvt2;
+    info->callback = callback;
+
+    DataListener l = channel->dataListener = (DataListener)malloc(sizeof(struct dataListener));
+    l->hStopEvt1 = hStopEvt1;
+    l->hStopEvt2 = hStopEvt2;
+    l->hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)asyncReadRoutine,
+            (void*)info, 0, &l->threadID);
+
+    if (l->hThread == NULL) {
+        logError("Failed to create thread.");
+        // release resources.
+        CloseHandle(l->hStopEvt1);
+        CloseHandle(l->hStopEvt2);
+        free(info);
+        free(channel->dataListener);
+        channel->dataListener = NULL;
+        return OP_FAILED;
+    }
+    return OP_SUCCEED;
+}
+
+/**
+ * Remove data listener.
+ * @param cid
+ */
+int removeListener(char *cid) {
+    Channel channel, *p;
+    p = map_get(channelMap, cid);
+    if (p == NULL) {
+        logError("Channel doesn't exist, make sure open it at first.");
+        return OP_FAILED;
+    }
+    channel = *p;
+
+    if (channel->dataListener == NULL) {
+        logError("No listener bound to this channel.");
+        return OP_FAILED;
+    }
+
+    DataListener l = channel->dataListener;
+    channel->dataListener = NULL;
+
+    int ret = OP_FAILED;
+    if (SetEvent(l->hStopEvt1) == FALSE) {
+        logWinError("Failed to set stop event1.");
+    } else if (WaitForSingleObject(l->hStopEvt2, INFINITE) != WAIT_OBJECT_0) {
+        logWinError("Failed to wait stop event2.");
+    } else {
+        ret = OP_SUCCEED;
+    }
+    CloseHandle(l->hStopEvt1);
+    CloseHandle(l->hStopEvt2);
+    // CloseHandle(l->hThread)
+    free(l);
+    return ret;
 }
 
 /**
@@ -236,8 +343,8 @@ int printChannelStatus(char *cid) {
     }
     channel = *p;
 
-    printf("Channel(%s): mode=%c hShareMem=%s syncBuf=", cid, channel->mode == CHAN_R ? 'R' : 'W',
-            channel->hShareMem != NULL ? "valid" : "invalid");
+    printf("Channel(%s): mode=%c hShareMem=%s listener=%s syncBuf=", cid, channel->mode == CHAN_R ? 'R' : 'W',
+            channel->hShareMem != NULL ? "valid" : "invalid", channel->dataListener != NULL ? "enable" : "disable");
     SyncBuf syncBuf = channel->syncBuf;
     printf("{");
     printf("RO=%c", is_reader_open(syncBuf) ? '1' : '0');
@@ -255,103 +362,86 @@ int printChannelStatus(char *cid) {
 /**
  * closeChannel
  * @param cid channel id
- * @return OP_SUCCEED, OP_FAILED
  */
-int closeChannel(char *cid) {
+void closeChannel(char *cid) {
     Channel channel, *p;
     p = map_get(channelMap, cid);
     if (p == NULL) {
         logError("Cannot close nonexistent channel.");
-        return OP_FAILED;
+        return;
     }
     channel = *p;
 
     map_remove(channelMap, cid);
 
-    // release SyncBuf
-    SyncBuf syncBuf = channel->syncBuf;
-    // update mark
-    if (channel->mode == CHAN_R) {
-        set_reader_close(syncBuf);
-    } else {
-        set_writer_close(syncBuf);
-    }
-    // prevent dead waiting in writeSyncBuf and readSyncBufB.
-    SetEvent(syncBuf->hREvt);
-    SetEvent(syncBuf->hWEvt);
+    int ok;
 
-    int flag = TRUE;
-    if (CloseHandle(syncBuf->hREvt) == FALSE) {
-        flag = FALSE;
+    if (channel->dataListener != NULL) {
+        ok = removeListener(cid) == OP_SUCCEED;
     }
-    if (CloseHandle(syncBuf->hWEvt) == FALSE) {
-        flag = FALSE;
-    }
-    if (CloseHandle(channel->hShareMem) == FALSE) {
-        flag = FALSE;
-    }
-    if (flag == FALSE) {
-        logWinError("Failed to clean windows resource,");
-        return OP_FAILED;
-    }
-
-    free(syncBuf);
+    ok = releaseSyncBuf(channel->syncBuf, channel->mode) == OP_SUCCEED;
+    CloseHandle(channel->hShareMem);
     free(channel);
 
+    // log
     if (allowLog(LOG_INFO)) {
-        printf("[INFO] Channel(%s) closed\n", cid);
+        if (ok) {
+            printf("[INFO] Channel(%s) closed\n", cid);
+        } else {
+            printf("[ERROR] Failed to close channel(%s)\n", cid);
+        }
     }
-    return OP_SUCCEED;
 }
 
 // SyncBuf
 
 SyncBuf newSyncBuf(char *shareMem, int bufSz, int mode, String semName, char isNewMem) {
-    SyncBuf syncBuf = (SyncBuf)malloc(sizeof(struct syncBuf));
-    syncBuf->shared = (struct _shared*)shareMem;
+    SyncBuf s = (SyncBuf)malloc(sizeof(struct syncBuf));
+    s->shared = (struct _shared*)shareMem;
     if (isNewMem) {
-        sb_bufSz(syncBuf) = bufSz;
-        sb_rc(syncBuf) = 0;
-        sb_wc(syncBuf) = 0;
-        set_buf_empty(syncBuf);
+        sb_bufSz(s) = bufSz;
+        sb_rc(s) = 0;
+        sb_wc(s) = 0;
+        set_buf_empty(s);
         // set mark
         if (mode == CHAN_R) {
-            set_reader_open(syncBuf);
+            set_reader_open(s);
         } else {
-            set_writer_open(syncBuf);
+            set_writer_open(s);
         }
     } else {
         // check memory mark
         if (mode == CHAN_R) {
-            if (is_reader_close(syncBuf)) {
+            if (is_reader_close(s)) {
                 logError("Channel has been closed from reader's side.");
                 return NULL;
-            } else if (is_reader_open(syncBuf)) {
+            } else if (is_reader_open(s)) {
                 logError("Channel has been opened from reader's side by another process.");
                 return NULL;
             } else {
-                set_reader_open(syncBuf);
+                set_reader_open(s);
             }
         } else {
-            if (is_writer_close(syncBuf)) {
+            if (is_writer_close(s)) {
                 logError("Channel has been closed from writer's side.");
                 return NULL;
-            } else if (is_writer_open(syncBuf)) {
+            } else if (is_writer_open(s)) {
                 logError("Channel has been opened from writer's side by another process.");
                 return NULL;
             } else {
-                set_writer_open(syncBuf);
+                set_writer_open(s);
             }
         }
         // every attr of SyncBuf could be read from the share memory.
     }
     // 由于共享内存的指针是从物理地址映射而来虚拟地址，所以在python和winexe两种环境中，这两个值可能不同.
-    syncBuf->buf = shareMem + sizeof(struct _shared);
+    s->buf = shareMem + sizeof(struct _shared);
     // create sem
-    if (initSyncBufEvent(semName, &syncBuf->hREvt, &syncBuf->hWEvt) != OP_SUCCEED) {
+    if (initSyncBufEvent(semName, &s->hREvt, &s->hWEvt) != OP_SUCCEED) {
+        free(s);
         return NULL;
     }
-    return syncBuf;
+    return s;
 }
 
 int initSyncBufEvent(String namePrefix, HANDLE *hREvt, HANDLE *hWEvt) {
@@ -376,7 +466,10 @@ int initSyncBufEvent(String namePrefix, HANDLE *hREvt, HANDLE *hWEvt) {
             *hWEvt = CreateEvent(NULL, FALSE, FALSE, wEvtName->val);
             if (*hWEvt == INVALID_HANDLE_VALUE || *hWEvt == NULL) {
                 logError("Failed to create read semaphore for SyncBuf.");
-                CloseHandle(*hREvt);
+                if (CloseHandle(*hREvt) == FALSE) {
+                    logWinError("Failed to clean windows resource,");
+                    return OP_FAILED;
+                }
                 ret = OP_FAILED;
             }
         }
@@ -478,6 +571,63 @@ inline int sb_inc_wc(SyncBuf s, int delta) {
     return OP_SUCCEED;
 }
 
+int asyncReadRoutine(LPVOID lpParam) {
+    AsyncReadInfo info = (AsyncReadInfo)lpParam;
+    SyncBuf s = info->syncBuf;
+
+    HANDLE hArray[2];
+    hArray[0] = info->hStopEvt1;
+    hArray[1] = s->hWEvt;
+
+    int waitRet;
+    char *buf = (char*)malloc(1);
+    int bufSz = 1;
+    while (1) {
+        int n = get_buf_readable(s);
+        if (n == 0) {
+            if (is_writer_close(s)) {
+                logError("Opposite end has been closed.");
+                break;
+            }
+            waitRet = WaitForMultipleObjects(2, hArray, FALSE, INFINITE);
+            if (waitRet == 0) {
+                goto onceStop;
+            } else if (waitRet != 1) {
+                logWinError("Failed to wait event in asyncReadRoutine.");
+                break;
+            }
+        } else {
+            if (n > bufSz) {
+                free(buf);
+                buf = (char*)malloc(n);
+                bufSz = n;
+            }
+            sb_read_n(s, buf, n);
+            if (sb_inc_rc(s, n) != OP_SUCCEED) {
+                break;
+            }
+            info->callback(buf, n);
+        }
+    }
+
+    if (WaitForSingleObject(info->hStopEvt1, INFINITE) != WAIT_OBJECT_0) {
+        logWinError("Failed to wait event in asyncReadRoutine.");
+    } else {
+        onceStop:
+#ifdef SMIPC_TRACE
+        printf("[TRACE] async read: got SE1.\n");
+#endif
+        if (SetEvent(info->hStopEvt2) == FALSE) {
+            logWinError("Failed to set stop event2.");
+        }
+#ifdef SMIPC_TRACE
+        printf("[TRACE] async read: set SE2.\n");
+#endif
+    }
+
+    return OP_SUCCEED;
+}
+
 int readSyncBuf(SyncBuf s, char *buf, int sz) {
     int n = get_buf_readable(s);
     if (n == 0) {
@@ -563,6 +713,34 @@ int writeSyncBuf(SyncBuf s, const char *data, int sz) {
             sz -= n;
         }
     }
+    return OP_SUCCEED;
+}
+
+int releaseSyncBuf(SyncBuf s, int mode) {
+    // update mark
+    if (mode == CHAN_R) {
+        set_reader_close(s);
+    } else {
+        set_writer_close(s);
+    }
+
+    // prevent dead waiting in writeSyncBuf and readSyncBufB.
+    SetEvent(s->hREvt);
+    SetEvent(s->hWEvt);
+
+    int flag = TRUE;
+    if (CloseHandle(s->hREvt) == FALSE) {
+        flag = FALSE;
+    }
+    if (CloseHandle(s->hWEvt) == FALSE) {
+        flag = FALSE;
+    }
+    if (flag == FALSE) {
+        logWinError("Failed to clean windows resource,");
+        free(s);
+        return OP_FAILED;
+    }
+    free(s);
     return OP_SUCCEED;
 }
 

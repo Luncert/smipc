@@ -34,106 +34,25 @@ void testString() {
     printf("All passed.\n");
 }
 
-char *cid = "test-chan";
+char *buildCrcTestData(int sz) {
+    int dataSz = sz - 2;
+    char *buf = (char*)malloc(sz);
 
-void simple_reader() {
-    logInfo("Start as reader.");
-    if (openChannel(cid, CHAN_R, 128) != OP_SUCCEED) {
-        return;
+    srand((unsigned)time(NULL));
+    for (int i = 0; i < dataSz; i++) {
+        buf[i] = (char)(rand() % 256 - 128);
     }
+    // calc crc
+    u_short crc = crcCompute((u_char*)buf, dataSz);
+    buf[sz - 2] = (char)(crc >> 8);
+    buf[sz - 1] = (char)crc;
 
-    char buf[128] = {0};
-    printChannelStatus(cid);
-
-    for (int i = 0; i < 3; i++) {
-        int ret = readChannel(cid, buf, 9, TRUE);
-        printf("READ:%s RET:%d\n", buf, ret);
-        printChannelStatus(cid);
-    }
-
-    closeChannel(cid);
+    return buf;
 }
 
-void simple_writer() {
-    if (openChannel(cid, CHAN_W, 128) != OP_SUCCEED) {
-        return;
-    }
-
-    printChannelStatus(cid);
-    char *data[] = {
-            "test/id=1",
-            "test/id=2",
-            "test/id=3"
-    };
-    for (int i = 0; i < 3; i++) {
-        writeChannel(cid, data[i], 9);
-        printChannelStatus(cid);
-        Sleep(1000);
-    }
-
-    closeChannel(cid);
+int isDataValid(char *data, int sz) {
+    return crcCompute((u_char*)data, sz) == 0;
 }
-
-void benchmark_reader() {
-    struct timeb st, et;
-
-    int frameSz = 1920 * 1080;
-    int chanSz = frameSz * 3;
-
-    // prepare test buf
-    char *buf = (char*)malloc(frameSz);
-    buf[0] = 0;
-    buf[frameSz - 1] = 0;
-
-    if (openChannel(cid, CHAN_R, chanSz) != OP_SUCCEED) {
-        return;
-    }
-    printChannelStatus(cid);
-    for (int i = 0; i < 3; i++) {
-        ftime(&st);
-        int ret = readChannel(cid, buf, frameSz, TRUE);
-        ftime(&et);
-        printf("RET:%d buf[0]:%d buf[-1]:%d rt: %dms\n", ret, buf[0], buf[frameSz - 1], et.millitm - st.millitm);
-        printChannelStatus(cid);
-        // reset
-        buf[0] = 0;
-        buf[frameSz - 1] = 0;
-    }
-    closeChannel(cid);
-
-    free(buf);
-}
-
-void benchmark_writer() {
-    struct timeb st, et;
-
-    int frameSz = 1920 * 1080;
-    int chanSz = frameSz * 3;
-
-    // prepare test data
-    char *data = (char*)malloc(frameSz);
-    data[0] = 0x8;
-    data[frameSz - 1] = 0xf;
-
-    if (openChannel(cid, CHAN_W, chanSz) != OP_SUCCEED) {
-        return;
-    }
-    printChannelStatus(cid);
-    for (int i = 0; i < 3; i++) {
-        ftime(&st);
-        writeChannel(cid, data, frameSz);
-        ftime(&et);
-        printf("wt: %dms\n", et.millitm - st.millitm);
-        printChannelStatus(cid);
-    }
-    closeChannel(cid);
-
-    free(data);
-}
-
-const int chanSz = 64;
-const int dataSz = 10247;
-const int totalSz = dataSz + 2;
 
 void printBuf(char *buf, int sz) {
     printf("[");
@@ -146,44 +65,200 @@ void printBuf(char *buf, int sz) {
     printf("]\n");
 }
 
-char *buildTestData() {
-    char *buf = (char*)malloc(totalSz);
+void testCrc() {
+    crcInit();
+    char a[] = "asd123\0\0";
+    u_short crc = crcCompute((u_char*)a, 6);
+    a[6] = (char)(crc >> 8);
+    a[7] = (char) crc;
+    printf("crc: %d\n", crc);
+    crc = crcCompute((u_char*)a, 8);
+    printf("crc: %d\n", crc);
+}
 
-    srand((unsigned)time(NULL));
-    for (int i = 0; i < dataSz; i++) {
-        buf[i] = (char)(rand() % 256 - 128);
+char *cid = "test-chan";
+
+void simple_reader() {
+    if (openChannel(cid, CHAN_R, 3) != OP_SUCCEED) {
+        return;
     }
-    // calc crc
-    crcInit();
-    u_short crc = crcCompute((u_char*)buf, dataSz);
-    buf[dataSz] = (char)(crc >> 8);
-    buf[dataSz + 1] = (char)crc;
 
-    return buf;
+    char buf[9] = {0};
+    printChannelStatus(cid);
+
+    for (int i = 0; i < 3; i++) {
+        int ret = readChannel(cid, buf, 9, TRUE);
+        printf("READ:%s RET:%d\n", buf, ret);
+        printChannelStatus(cid);
+    }
+
+    closeChannel(cid);
 }
 
-int isDataValid(char *data) {
-    crcInit();
-    return crcCompute((u_char*)data, totalSz) == 0;
+void simple_writer() {
+    if (openChannel(cid, CHAN_W, 3) != OP_SUCCEED) {
+        return;
+    }
+
+    char *data[] = {
+            "test/id=1",
+            "test/id=2",
+            "test/id=3"
+    };
+    printChannelStatus(cid);
+    for (int i = 0; i < 3; i++) {
+        writeChannel(cid, data[i], 9);
+        printChannelStatus(cid);
+        Sleep(1000);
+    }
+
+    closeChannel(cid);
 }
+
+#define A_CHAN_SZ 77
+#define A_FRAME_SZ 512
+#define A_FRAME_NUM 100
+
+char ar_buf[A_FRAME_SZ];
+int ar_buf_offset = 0;
+int frame_count = 1;
+
+void on_data(char *data, int sz) {
+    int tmp = ar_buf_offset + sz;
+    if (tmp > A_FRAME_SZ) {
+        // 把data前半部分拷贝进ar_buf，剩下的在最后的条件判断里拷贝
+        tmp = A_FRAME_SZ - ar_buf_offset;
+        memcpy(ar_buf + ar_buf_offset, data, tmp);
+        ar_buf_offset += tmp;
+        sz -= tmp;
+    } else {
+        memcpy(ar_buf + ar_buf_offset, data, sz);
+        ar_buf_offset += sz;
+        sz = 0;
+    }
+    if (ar_buf_offset == A_FRAME_SZ) {
+        if (!isDataValid(ar_buf, A_FRAME_SZ)) {
+            printf("[ERROR] Test failed, data incorrect. frame id=%d\n", frame_count);
+        } else {
+            printf("[INFO] Data validation pass, frame id=%d\n", frame_count);
+        }
+        frame_count++;
+        ar_buf_offset = 0;
+    }
+    if (sz > 0) {
+        memcpy(ar_buf + ar_buf_offset, data + tmp, sz);
+        ar_buf_offset += sz;
+    }
+}
+
+void async_reader() {
+    crcInit();
+
+    if (openChannel(cid, CHAN_R, A_CHAN_SZ) != OP_SUCCEED) {
+        return;
+    }
+
+    onChannelData(cid, on_data);
+    Sleep(10000);
+    removeListener(cid);
+
+    closeChannel(cid);
+}
+
+void async_writer() {
+    crcInit();
+
+    if (openChannel(cid, CHAN_W, A_CHAN_SZ) != OP_SUCCEED) {
+        return;
+    }
+
+    char *data;
+    printChannelStatus(cid);
+    for (int i = 0; i < A_FRAME_NUM; i++) {
+        data = buildCrcTestData(A_FRAME_SZ);
+        writeChannel(cid, data, A_FRAME_SZ);
+        free(data);
+    }
+
+    closeChannel(cid);
+}
+
+#define B_CHAN_SZ 512
+#define B_FRAME_SZ 1111111
+
+void benchmark_reader() {
+    struct timeb st, et;
+
+    // prepare test buf
+    char stub = 0xa;
+    char *buf = (char*)malloc(B_FRAME_SZ);
+    buf[100] = 0;
+
+    if (openChannel(cid, CHAN_R, B_CHAN_SZ) != OP_SUCCEED) {
+        return;
+    }
+    printChannelStatus(cid);
+    for (int i = 0; i < 3; i++) {
+        ftime(&st);
+        int ret = readChannel(cid, buf, B_FRAME_SZ, TRUE);
+        ftime(&et);
+        printf("RET:%d buf[100]:%d stub:%d rt: %dms\n", ret, buf[100], stub++, et.millitm - st.millitm);
+        printChannelStatus(cid);
+        // reset
+        buf[0] = 0;
+        buf[B_FRAME_SZ - 1] = 0;
+    }
+    closeChannel(cid);
+
+    free(buf);
+}
+
+void benchmark_writer() {
+    struct timeb st, et;
+
+    // prepare test data
+    char *data = (char*)malloc(B_FRAME_SZ);
+    data[100] = 0xa;
+
+    if (openChannel(cid, CHAN_W, B_CHAN_SZ) != OP_SUCCEED) {
+        return;
+    }
+    printChannelStatus(cid);
+    for (int i = 0; i < 3; i++, data[100]++) {
+        ftime(&st);
+        writeChannel(cid, data, B_FRAME_SZ);
+        ftime(&et);
+        printf("wt: %dms\n", et.millitm - st.millitm);
+        printChannelStatus(cid);
+    }
+    closeChannel(cid);
+
+    free(data);
+}
+
+#define T_CHAN_SZ 64
+#define T_DATA_SZ 10247
+#define T_TOTAL_SZ (T_DATA_SZ + 2)
 
 // test case 1 (build data bigger than channel, send it at one time)
 
 void test1_reader() {
-    if (openChannel(cid, CHAN_R, chanSz) != OP_SUCCEED) {
+    crcInit();
+
+    if (openChannel(cid, CHAN_R, T_CHAN_SZ) != OP_SUCCEED) {
         return;
     }
     printChannelStatus(cid);
 
-    char *buf = (char*)malloc(totalSz);
-    int n = readChannel(cid, buf, totalSz, TRUE);
-    if (n < 0 || n != totalSz) {
+    char *buf = (char*)malloc(T_TOTAL_SZ);
+    int n = readChannel(cid, buf, T_TOTAL_SZ, TRUE);
+    if (n < 0 || n != T_TOTAL_SZ) {
         printf("[ERROR] Test failed, read failed, ret=%d\n", n);
         goto clean;
     }
 
     // check data
-    if (isDataValid(buf) == FALSE) {
+    if (isDataValid(buf, T_TOTAL_SZ) == FALSE) {
         printf("[ERROR] Test failed, data incorrect.\n");
         goto clean;
     }
@@ -197,13 +272,15 @@ void test1_reader() {
 }
 
 void test1_writer() {
-    if (openChannel(cid, CHAN_W, chanSz) != OP_SUCCEED) {
+    crcInit();
+
+    if (openChannel(cid, CHAN_W, T_CHAN_SZ) != OP_SUCCEED) {
         return;
     }
     printChannelStatus(cid);
 
-    char *buf = buildTestData();
-    if (writeChannel(cid, buf, totalSz) != OP_SUCCEED) {
+    char *buf = buildCrcTestData(T_TOTAL_SZ);
+    if (writeChannel(cid, buf, T_TOTAL_SZ) != OP_SUCCEED) {
         logError("Test failed, write failed.");
         goto clean;
     }
@@ -219,16 +296,18 @@ void test1_writer() {
 // test case 2 (build data bigger than channel, break into many parts and send to receiver)
 
 void test2_reader() {
+    crcInit();
+
     const int blockSz = 9;
 
-    if (openChannel(cid, CHAN_R, chanSz) != OP_SUCCEED) {
+    if (openChannel(cid, CHAN_R, T_CHAN_SZ) != OP_SUCCEED) {
         return;
     }
     printChannelStatus(cid);
 
-    char *buf = (char*)malloc(totalSz);
+    char *buf = (char*)malloc(T_TOTAL_SZ);
     // read
-    for (int offset = 0, rest = totalSz, n; rest > 0; offset += n, rest -= n) {
+    for (int offset = 0, rest = T_TOTAL_SZ, n; rest > 0; offset += n, rest -= n) {
         n = readChannel(cid, buf + offset, rest < blockSz ? rest : blockSz, TRUE);
         if (n < 0) {
             printf("[ERROR] Test failed, read failed, ret=%d\n", n);
@@ -238,8 +317,8 @@ void test2_reader() {
     }
 
     // check data
-    if (!isDataValid(buf)) {
-        printf("[ERROR] Test failed, data incorrect.\n");
+    if (!isDataValid(buf, T_TOTAL_SZ)) {
+        logError("Test failed, data incorrect.");
         goto clean;
     }
 
@@ -251,17 +330,19 @@ void test2_reader() {
 }
 
 void test2_writer() {
+    crcInit();
+
     const int blockSz = 7;
 
-    if (openChannel(cid, CHAN_W, chanSz) != OP_SUCCEED) {
+    if (openChannel(cid, CHAN_W, T_CHAN_SZ) != OP_SUCCEED) {
         return;
     }
     printChannelStatus(cid);
 
-    char *buf = buildTestData();
+    char *buf = buildCrcTestData(T_TOTAL_SZ);
 
     // send
-    for (int offset = 0, rest = totalSz, n; rest > 0;  offset += n, rest -= n) {
+    for (int offset = 0, rest = T_TOTAL_SZ, n; rest > 0; offset += n, rest -= n) {
         n = rest < blockSz ? rest : blockSz;
         if (writeChannel(cid, buf + offset, n) != OP_SUCCEED) {
             logError("Test failed, write failed.");
@@ -275,17 +356,6 @@ void test2_writer() {
     clean:
     closeChannel(cid);
     free(buf);
-}
-
-void testCrc() {
-    crcInit();
-    char a[] = "asd123\0\0";
-    u_short crc = crcCompute((u_char*)a, 6);
-    a[6] = (char)(crc >> 8);
-    a[7] = (char) crc;
-    printf("crc: %d\n", crc);
-    crc = crcCompute((u_char*)a, 8);
-    printf("crc: %d\n", crc);
 }
 
 int main(int argc, char *argv[]) {
@@ -302,6 +372,10 @@ int main(int argc, char *argv[]) {
         simple_writer();
     } else if (strcmp("-r", p) == 0) {
         simple_reader();
+    } else if (strcmp("-ar", p) == 0) {
+        async_reader();
+    } else if (strcmp("-aw", p) == 0) {
+        async_writer();
     } else if (strcmp("-bw", p) == 0) {
         benchmark_writer();
     } else if (strcmp("-br", p) == 0) {
