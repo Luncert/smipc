@@ -1,6 +1,9 @@
 from ctypes import *
+from os import path
+import os
 
-_lib = CDLL("../core-dist/libsmipc.dll")
+libPath = path.join(path.dirname(os.path.abspath(__file__)), "lib/libsmipc.dll")
+_lib = CDLL(libPath)
 
 _OP_SUCCEED = 0
 _OP_FAILED = -1
@@ -58,6 +61,8 @@ class Channel(object):
     def write(self, data):
         if isinstance(data, str):
             data = data.encode('utf-8')
+        elif isinstance(data, bytearray):
+            data = bytes(data)
         elif not isinstance(data, bytes):
             raise ParameterTypeError('Data must be str or bytes.')
         ret = _lib.writeChannel(self.cid, data, len(data))
