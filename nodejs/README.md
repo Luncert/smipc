@@ -20,7 +20,7 @@ This package is used to transport big data between processes, bases on shared me
 ## Demo
 
 ```js
-const smipc = require('./build/Release/smipc.node')
+const smipc = require('smipc')
 
 const testCid = "test-chan"
 const dataSz = 1024

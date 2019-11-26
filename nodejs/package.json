@@ -1,6 +1,6 @@
 {
   "name": "smipc",
-  "version": "1.0.24",
+  "version": "1.0.26",
   "description": "",
   "main": "index.js",
   "gypfile": true,
@@ -13,7 +13,7 @@
     "url": "https://github.com/Luncert/smipc"
   },
   "author": "Luncert",
-  "readme": "https://github.com/Luncert/smipc/nodejs/README.md",
+  "homepage": "https://github.com/Luncert/smipc/nodejs/README.md",
   "license": "ISC",
   "devDependencies": {
     "node-gyp": "^6.0.1"
