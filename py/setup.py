@@ -1,4 +1,4 @@
-from distutils.core import setup
+from setuptools import setup
 
 setup(
     name='smipc',
@@ -7,5 +7,7 @@ setup(
     author='Luncert',
     author_email='2725115515@qq.com',
     url='https://github.com/Luncert/smipc',
-    description='IPC lib based on shared memory.'
+    description='IPC lib based on shared memory.',
+    data_files=[('lib', ['lib/libsmipc.dll'])],
+    keywords=['ipc', 'shared memory']
 )
