@@ -1,9 +1,33 @@
+# smipc
+
+This package is used to transport big data between processes, bases on shared memory.
+
+> For now, only windows supported.
+
+## API
+
+* ```init(isTraceMode: bool): void```: initialize library, make sure call it firstly
+  * ```isTraceMode```: print some debug info if set true.
+* ```openChannel(cid: string, mode: number, chanSz: number): bool```
+  * ```mode```: CHAN_R=open channel as reader, CHAN_W=open channel as writer
+* ```readChannel(cid: string, buf: Uint8Array, sz: number, blocking: bool): number```
+  * ```blocking```: if set true, block operation until received the specified amount of data or opposite end closed
+* ```writeChannel(cid: string, data: Uint8Array, sz: number): bool```
+* ```printChannelStatus(cid: string): bool```
+* ```closeChannel(cid: string): bool```
+* ```deinit(): void```: clean library
+
+## Demo
+
+```js
 const smipc = require('./build/Release/smipc.node')
 
 const testCid = "test-chan"
 const dataSz = 1024
+
 args = process.argv.slice(2)
 if (args[0] == '-r') {
+    // init library
     smipc.init(true)
     smipc.openChannel(testCid, smipc.CHAN_R, 12)
     // generate test data
@@ -13,8 +37,9 @@ if (args[0] == '-r') {
     let n = smipc.readChannel(testCid, buf, dataSz, true)
     console.log('read ' + n)
     smipc.printChannelStatus(testCid)
-    // clean
+    // close channel
     smipc.closeChannel(testCid)
+    // clean library
     smipc.deinit()
     // print test data
     let s = ''
@@ -46,3 +71,5 @@ if (args[0] == '-r') {
 } else {
     console.error('Invalid option.')
 }
+```
+
