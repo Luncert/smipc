@@ -110,8 +110,7 @@ Boolean CloseChannel(const CallbackInfo& info) {
 }
 
 Object Initialize(Env env, Object exports) {
-    // module = LoadLibrary("C:\\Workspace\\Project\\smipc\\core-dist\\libsmipc.dll");
-    module = LoadLibrary("C:\\Workspace\\Project\\smipc\\core\\src\\cmake-build-debug\\libsmipc.dll");
+    module = LoadLibrary("./lib/libsmipc.dll");
     if (module == NULL) {
         printf("[ERROR] Failed to load libsmipc.dll\n");
         return exports;
