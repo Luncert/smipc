@@ -9,12 +9,18 @@ _OP_SUCCEED = 0
 _OP_FAILED = -1
 _OPPOSITE_END_CLOSED = -2
 
+LOG_DISABLE = 0
+LOG_BASIC = 1
+LOG_ALL = 2
+
 CHAN_R = 0
 CHAN_W = 1
 
+READ_ASYNC_CALLBACK = CFUNCTYPE(c_char_p, c_int, c_int)
 
-def init_library(allow_log=True):
-    _lib.initLibrary(1 if allow_log else 0)
+
+def init_library(log_mode):
+    _lib.initLibrary(log_mode)
 
 
 def clean_library():
@@ -86,13 +92,30 @@ class Channel(object):
             raise OperationFailedError("Failed to read channel.")
         return n
 
+    # def read_async(self, callback):
+    #     def callback_wrapper(data, sz):
+    #         callback(string_at(data, sz))
+    #     ret = _lib.onChannelData(self.cid, READ_ASYNC_CALLBACK(callback_wrapper))
+    #     if ret == _OP_FAILED:
+    #         raise OperationFailedError("Failed to enable data listener.")
+    #     return AsyncReaderPromise(self)
+
     def print_status(self):
         ret = _lib.printChannelStatus(self.cid)
         _check_ret(ret, "Failed to print channel status.")
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        ret = _lib.closeChannel(self.cid)
-        _check_ret(ret, "Failed to close channel.")
+        _lib.closeChannel(self.cid)
+
+
+# class AsyncReaderPromise(object):
+#     def __init__(self, channel):
+#         self.channel = channel
+#
+#     def stop(self):
+#         ret = _lib.removeListener(self.channel.cid)
+#         if ret == _OP_FAILED:
+#             raise OperationFailedError("Failed to disable data listener.")
 
 
 def open_channel(cid, mode, chan_sz):

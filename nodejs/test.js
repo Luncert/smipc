@@ -8,13 +8,13 @@ const testCid = "test-chan"
 const dataSz = 1024
 args = process.argv.slice(2)
 if (args[0] == '-r') {
-    smipc.init(true)
+    smipc.init(smipc.LOG_ALL)
     smipc.openChannel(testCid, smipc.CHAN_R, 12)
     // generate test data
     let buf = new Uint8Array(dataSz)
     // send data
     smipc.printChannelStatus(testCid)
-    let n = smipc.readChannel(testCid, buf, 0, dataSz, true)
+    let n = smipc.readChannel(testCid, buf, dataSz, true)
     console.log('read ' + n)
     smipc.printChannelStatus(testCid)
     // clean
@@ -27,7 +27,7 @@ if (args[0] == '-r') {
     }
     console.log(s)
 } else if (args[0] == '-w') {
-    smipc.init(true)
+    smipc.init(smipc.LOG_ALL)
     smipc.openChannel(testCid, smipc.CHAN_W, 12)
     // generate test data
     let buf = new Uint8Array(dataSz)

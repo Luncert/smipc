@@ -1,15 +1,18 @@
 from smipc import *
+import time
+
+
+def on_data(data):
+    print('read', data)
 
 
 cid = b'test-chan'
 chanSz = 20
-dataSz = 1024
+
 init_library(LOG_ALL)
-buf = create_string_buffer(dataSz)
 with open_channel(cid, CHAN_R, chanSz) as c:
+    t = c.read_async(on_data)
+    time.sleep(3)
+    t.stop()
     c.print_status()
-    n = c.read(buf, dataSz, True)
-    print('read', n)
-    c.print_status()
-print(bytes(buf))
 clean_library()

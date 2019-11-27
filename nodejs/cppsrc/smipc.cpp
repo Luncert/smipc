@@ -5,8 +5,12 @@
 
 using namespace Napi;
 
-#define OP_SUCCEED 0
-#define OP_FAILED -1
+#define LOG_DISABLE 0
+#define LOG_BASIC   1
+#define LOG_ALL     2
+
+#define OP_SUCCEED          0
+#define OP_FAILED           -1
 #define OPPOSITE_END_CLOSED -2
 
 #define CHAN_R 0
@@ -53,12 +57,12 @@ void LoadSmipc(const CallbackInfo& info) {
 
 void Init(const CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsBoolean()) {
-        Napi::TypeError::New(env, "Invalid parameter, (bool isTraceMode).")
+    if (info.Length() < 1 || !info[0].IsNumber()) {
+        Napi::TypeError::New(env, "Invalid parameter, (logMode: number).")
             .ThrowAsJavaScriptException();
     }
-    Boolean isTraceMode = info[0].As<Boolean>();
-    _initLibrary(isTraceMode.Value() ? 1 : 0);
+    Number logMode = info[0].As<Number>();
+    _initLibrary(logMode.Int32Value());
 }
 
 void Deinit(const CallbackInfo& info) {
@@ -68,7 +72,7 @@ void Deinit(const CallbackInfo& info) {
 Boolean OpenChannel(const CallbackInfo& info) {
     Env env = info.Env();
     if (info.Length() < 3 || !info[0].IsString() || !info[1].IsNumber() || !info[2].IsNumber()) {
-        TypeError::New(env, "Invalid parameter, (char *cid, int mode, int chanSz).")
+        TypeError::New(env, "Invalid parameter, (cid: string, mode: number, chanSz: number).")
             .ThrowAsJavaScriptException();
     }
     std::string cid = info[0].As<String>().Utf8Value();
@@ -81,17 +85,16 @@ Boolean OpenChannel(const CallbackInfo& info) {
 Number ReadChannel(const CallbackInfo& info) {
     Env env = info.Env();
     if (info.Length() < 4 || !info[0].IsString() || !info[1].IsTypedArray()
-        || !info[2].IsNumber() || !info[3].IsNumber() || !info[4].IsBoolean()) {
-        Napi::TypeError::New(env, "Invalid parameter, (cid: string, buf: Uint8Array, startPos: numebr, n: number, blocking: bool).")
+        || !info[2].IsNumber() || !info[3].IsBoolean()) {
+        Napi::TypeError::New(env, "Invalid parameter, (cid: string, buf: Uint8Array, n: number, blocking: bool).")
             .ThrowAsJavaScriptException();
     }
     std::string cid = info[0].As<String>().Utf8Value();
     Uint8Array arr = info[1].As<Uint8Array>();
-    Number startPos = info[2].As<Number>();
-    Number n = info[3].As<Number>();
-    Boolean blocking = info[4].As<Boolean>();
+    Number n = info[2].As<Number>();
+    Boolean blocking = info[3].As<Boolean>();
 
-    char* data = reinterpret_cast<char *>(arr.ArrayBuffer().Data()) + startPos;
+    char* data = reinterpret_cast<char *>(arr.ArrayBuffer().Data());
     int ret = _readChannel((char*)cid.c_str(), data, n.Int32Value(), blocking.Value() ? 1 : 0);
     return Number::New(env, ret);
 }
@@ -99,7 +102,7 @@ Number ReadChannel(const CallbackInfo& info) {
 Boolean WriteChannel(const CallbackInfo& info) {
     Env env = info.Env();
     if (info.Length() < 3 || !info[0].IsString() || !info[1].IsTypedArray() || !info[2].IsNumber()) {
-        Napi::TypeError::New(env, "Invalid parameter, (char *cid, char *data, int n).")
+        Napi::TypeError::New(env, "Invalid parameter, (cid: string, data: Uint8Array, n: number).")
             .ThrowAsJavaScriptException();
     }
     std::string cid = info[0].As<String>().Utf8Value();
@@ -113,7 +116,7 @@ Boolean WriteChannel(const CallbackInfo& info) {
 Boolean PrintChannelStatus(const CallbackInfo& info) {
     Env env = info.Env();
     if (info.Length() < 1 || !info[0].IsString()) {
-        Napi::TypeError::New(env, "Invalid parameter, (char *cid).")
+        Napi::TypeError::New(env, "Invalid parameter, (cid: string).")
             .ThrowAsJavaScriptException();
     }
     // String的析构函数会自动释放内存，所以这里用cid来保存其引用
@@ -124,7 +127,7 @@ Boolean PrintChannelStatus(const CallbackInfo& info) {
 void CloseChannel(const CallbackInfo& info) {
     Env env = info.Env();
     if (info.Length() < 1 || !info[0].IsString()) {
-        TypeError::New(env, "Invalid parameter, (char *cid).")
+        TypeError::New(env, "Invalid parameter, (cid: string).")
             .ThrowAsJavaScriptException();
     }
     std::string cid = info[0].As<String>().Utf8Value();
@@ -133,6 +136,10 @@ void CloseChannel(const CallbackInfo& info) {
 }
 
 Object Initialize(Env env, Object exports) {
+    exports.Set("LOG_DISABLE", Number::New(env, LOG_DISABLE));
+    exports.Set("LOG_BASIC", Number::New(env, LOG_BASIC));
+    exports.Set("LOG_ALL", Number::New(env, LOG_ALL));
+
     exports.Set("OP_SUCCEED", Number::New(env, OP_SUCCEED));
     exports.Set("OP_FAILED", Number::New(env, OP_FAILED));
     exports.Set("OPPOSITE_END_CLOSED", Number::New(env, OPPOSITE_END_CLOSED));
