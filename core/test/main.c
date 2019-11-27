@@ -83,7 +83,7 @@ void simple_reader() {
         return;
     }
 
-    char buf[9] = {0};
+    char buf[10] = {0};
     printChannelStatus(cid);
 
     for (int i = 0; i < 3; i++) {
@@ -96,6 +96,7 @@ void simple_reader() {
 }
 
 void simple_writer() {
+    crcInit();
     if (openChannel(cid, CHAN_W, 3) != OP_SUCCEED) {
         return;
     }
@@ -367,7 +368,7 @@ int main(int argc, char *argv[]) {
 
     char *p = argv[1];
 
-    initLibrary(TRUE);
+    initLibrary(LOG_ALL);
     if (strcmp("-w", p) == 0) {
         simple_writer();
     } else if (strcmp("-r", p) == 0) {

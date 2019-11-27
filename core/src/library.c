@@ -38,13 +38,19 @@ typedef map_t(Channel) channel_map_t;
  */
 channel_map_t* channelMap;
 
-void initLibrary(int allowLog) {
+void initLibrary(int logMode) {
     if (channelMap == NULL) {
         channelMap = (channel_map_t*)malloc(sizeof(channel_map_t));
         map_init(channelMap);
     }
-    if (!allowLog) {
-        setLogLevel(LOG_DISABLE);
+    if (logMode == LOG_DISABLE) {
+        setLogLevel(LOG_LEVEL_DISABLE);
+    } else if (logMode == LOG_BASIC) {
+        setLogLevel(LOG_LEVEL_DEBUG);
+    } else if (logMode == LOG_ALL) {
+        setLogLevel(LOG_LEVEL_TRACE);
+    } else {
+        logError("Invalid logMode, using default value LOG_BASIC.");
     }
 }
 
@@ -103,7 +109,7 @@ int openChannel(char *cid, int mode, int chanSz) {
         // Failed to open channel's shared memory, try to create
         if (chanSz > MAX_CHAN_SZ) {
             chanSz = MAX_CHAN_SZ;
-            if (allowLog(LOG_WARN)) {
+            if (allowLog(LOG_LEVEL_WARN)) {
                 printf("[WARN] chanSz should be at most %ldBytes, auto adjusted.", MAX_CHAN_SZ);
             }
         }
@@ -113,7 +119,7 @@ int openChannel(char *cid, int mode, int chanSz) {
             logWinError("Failed to create shared memory.");
             return OP_FAILED;
         }
-        if (allowLog(LOG_INFO)) {
+        if (allowLog(LOG_LEVEL_INFO)) {
             printf("[INFO] Channel(%s) created\n", cid);
         }
 
@@ -134,7 +140,7 @@ int openChannel(char *cid, int mode, int chanSz) {
         memset(shareMem, 0, sizeof(struct syncBuf));
         isNewMem = TRUE;
     } else {
-        if (allowLog(LOG_INFO)) {
+        if (allowLog(LOG_LEVEL_INFO)) {
             printf("[INFO] Channel(%s) open\n", cid);
         }
         shareMem = (char*)MapViewOfFile(hShareMem,FILE_MAP_WRITE|FILE_MAP_READ,
@@ -215,6 +221,10 @@ int readChannel(char *cid, char *buf, int n, char blocking) {
  * @return
  */
 int onChannelData(char *cid, Callback callback) {
+    if (callback == NULL) {
+        logError("Invalid parameter, callback should be nonnull.");
+        return OP_FAILED;
+    }
     Channel channel, *p;
     p = map_get(channelMap, cid);
     if (p == NULL) {
@@ -254,10 +264,9 @@ int onChannelData(char *cid, Callback callback) {
     DataListener l = channel->dataListener = (DataListener)malloc(sizeof(struct dataListener));
     l->hStopEvt1 = hStopEvt1;
     l->hStopEvt2 = hStopEvt2;
-    l->hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)asyncReadRoutine,
+    HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)asyncReadRoutine,
             (void*)info, 0, &l->threadID);
-
-    if (l->hThread == NULL) {
+    if (hThread == NULL) {
         logError("Failed to create thread.");
         // release resources.
         CloseHandle(l->hStopEvt1);
@@ -267,6 +276,7 @@ int onChannelData(char *cid, Callback callback) {
         channel->dataListener = NULL;
         return OP_FAILED;
     }
+    CloseHandle(hThread);
     return OP_SUCCEED;
 }
 
@@ -374,17 +384,19 @@ void closeChannel(char *cid) {
 
     map_remove(channelMap, cid);
 
-    int ok;
+    int ok = TRUE;
 
     if (channel->dataListener != NULL) {
         ok = removeListener(cid) == OP_SUCCEED;
     }
-    ok = releaseSyncBuf(channel->syncBuf, channel->mode) == OP_SUCCEED;
-    CloseHandle(channel->hShareMem);
+    ok &= releaseSyncBuf(channel->syncBuf, channel->mode) == OP_SUCCEED;
+    if (CloseHandle(channel->hShareMem) == FALSE) {
+        logWinError("Failed to close share memory handle.");
+    }
     free(channel);
 
     // log
-    if (allowLog(LOG_INFO)) {
+    if (allowLog(LOG_LEVEL_INFO)) {
         if (ok) {
             printf("[INFO] Channel(%s) closed\n", cid);
         } else {
@@ -539,17 +551,13 @@ inline int sb_inc_rc(SyncBuf s, int delta) {
     sb_rc(s) = (sb_rc(s) + delta) % sb_bufSz(s);
     if (sb_rc(s) == sb_wc(s)) {
         set_buf_empty(s);
-#ifdef SMIPC_TRACE
-        printf("[TRACE] read: buffer -> empty.\n");
-#endif
+        logTrace("read: buffer -> empty.");
     }
     if (!SetEvent(s->hREvt)) {
         logWinError("Failed to set read event.");
         return OP_FAILED;
     }
-#ifdef SMIPC_TRACE
-    printf("[TRACE] read: set RE.\n");
-#endif
+    logTrace("read: set RE.");
     return OP_SUCCEED;
 }
 
@@ -557,22 +565,19 @@ inline int sb_inc_wc(SyncBuf s, int delta) {
     sb_wc(s) = (sb_wc(s) + delta) % sb_bufSz(s);
     if (sb_rc(s) == sb_wc(s)) {
         set_buf_full(s);
-#ifdef SMIPC_TRACE
-        printf("[TRACE] write: buffer -> full.\n");
-#endif
+        logTrace("write: buffer -> full.");
     }
     if (!SetEvent(s->hWEvt)) {
         logWinError("Failed to set write event.");
         return OP_FAILED;
     }
-#ifdef SMIPC_TRACE
-    printf("[TRACE] write: set WE.\n");
-#endif
+    logTrace("write: set WE.");
     return OP_SUCCEED;
 }
 
 int asyncReadRoutine(LPVOID lpParam) {
     AsyncReadInfo info = (AsyncReadInfo)lpParam;
+
     SyncBuf s = info->syncBuf;
 
     HANDLE hArray[2];
@@ -606,24 +611,24 @@ int asyncReadRoutine(LPVOID lpParam) {
             if (sb_inc_rc(s, n) != OP_SUCCEED) {
                 break;
             }
+            logTrace("async read: invoking callback.");
             info->callback(buf, n);
         }
     }
+    free(buf);
 
     if (WaitForSingleObject(info->hStopEvt1, INFINITE) != WAIT_OBJECT_0) {
         logWinError("Failed to wait event in asyncReadRoutine.");
     } else {
         onceStop:
-#ifdef SMIPC_TRACE
-        printf("[TRACE] async read: got SE1.\n");
-#endif
+        logTrace("async read: got SE1.");
         if (SetEvent(info->hStopEvt2) == FALSE) {
             logWinError("Failed to set stop event2.");
         }
-#ifdef SMIPC_TRACE
-        printf("[TRACE] async read: set SE2.\n");
-#endif
+        logTrace("async read: set SE2.");
     }
+
+    free(info);
 
     return OP_SUCCEED;
 }
@@ -659,13 +664,11 @@ int readSyncBufB(SyncBuf s, char *buf, int sz) {
                 logWinError("Failed to wait for write event.");
                 return OP_FAILED;
             }
-#ifdef SMIPC_TRACE
-            printf("[TRACE] read: got WE.\n");
-#endif
+            logTrace("read: got WE.");
         } else {
-#ifdef SMIPC_TRACE
-            printf("[TRACE] read: in[sz=%d ava=%d buf=%p off=%d] rc=%d.\n", sz, n, buf, offset, sb_rc(s));
-#endif
+            if (allowLog(LOG_LEVEL_TRACE)) {
+                printf("[TRACE] read: in[sz=%d ava=%d buf=%p off=%d] rc=%d.\n", sz, n, buf, offset, sb_rc(s));
+            }
             if (n > sz) {
                 n = sz;
             }
@@ -695,13 +698,11 @@ int writeSyncBuf(SyncBuf s, const char *data, int sz) {
                 logWinError("Failed to wait for read event.");
                 return OP_FAILED;
             }
-#ifdef SMIPC_TRACE
-            printf("[TRACE] write: got RE.\n");
-#endif
+            logTrace("write: got RE.");
         } else {
-#ifdef SMIPC_TRACE
-            printf("[TRACE] write: in[sz=%d ava=%d data=%p off=%d] wc=%d\n", sz, n, data, offset, sb_wc(s));
-#endif
+            if (allowLog(LOG_LEVEL_TRACE)) {
+                printf("[TRACE] write: in[sz=%d ava=%d data=%p off=%d] wc=%d\n", sz, n, data, offset, sb_wc(s));
+            }
             if (n > sz) {
                 n = sz;
             }

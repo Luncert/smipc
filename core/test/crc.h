@@ -46,6 +46,6 @@ void crcInit(void);
  * @note This function expects that crcInit() has been called
  *       first to initialize the CRC lookup table.
  */
-width_t crcCompute(unsigned char * message, unsigned int nBytes);
+width_t crcCompute(const unsigned char * message, unsigned int nBytes);
 
 #endif // CRC_H_INCLUDED

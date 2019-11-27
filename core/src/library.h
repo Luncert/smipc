@@ -9,10 +9,12 @@
 #define OP_FAILED -1
 #define OPPOSITE_END_CLOSED -2
 
+#define LOG_DISABLE 0 // no log
+#define LOG_BASIC   1 // log basic event info: channel created, channel closed .etc
+#define LOG_ALL     2 // log all, include write and read details.
+
 #define CHAN_R 0
 #define CHAN_W 1
-
-//#define SMIPC_TRACE
 
 typedef void (*Callback)(char *data, int sz);
 
@@ -27,7 +29,7 @@ typedef struct syncBuf {
 
 typedef struct dataListener {
     DWORD threadID;
-    HANDLE hThread, hStopEvt1, hStopEvt2;
+    HANDLE hStopEvt1, hStopEvt2;
 } *DataListener;
 
 typedef struct asyncReadInfo {
@@ -43,7 +45,7 @@ typedef struct channel {
     DataListener dataListener;
 } *Channel;
 
-void initLibrary(int isTraceMode);
+void initLibrary(int logMode);
 void cleanLibrary();
 int openChannel(char *cid, int mode, int chanSz);
 int writeChannel(char *cid, char *data, int len);

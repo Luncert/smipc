@@ -12,15 +12,18 @@
 
 // log
 
-#define LOG_DEBUG   0
-#define LOG_INFO    1
-#define LOG_WARN    2
-#define LOG_ERROR   3
-#define LOG_FATAL   4
-#define LOG_DISABLE 5
+#define LOG_LEVEL_TRACE   0
+#define LOG_LEVEL_DEBUG   1
+#define LOG_LEVEL_INFO    2
+#define LOG_LEVEL_WARN    3
+#define LOG_LEVEL_ERROR   4
+#define LOG_LEVEL_FATAL   5
+#define LOG_LEVEL_DISABLE 6
 
 void setLogLevel(int l);
 int allowLog(int level);
+void _log(int l, char *msg);
+void logTrace(char *msg);
 void logDebug(char *msg);
 void logInfo(char* msg);
 void logWarn(char *msg);

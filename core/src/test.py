@@ -1,4 +1,3 @@
 from ctypes import *
 
-lib = cdll.LoadLibrary('cmake-build-debug/libsmipc.dll')
-lib.testMap()
+lib = CDLL('cmake-build-debug/libsmipc.dll')
