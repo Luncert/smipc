@@ -18,7 +18,7 @@ typedef int (*func_openChannel)(char *cid, int mode, int chanSz);
 typedef int (*func_writeChannel)(char *cid, char *data, int len);
 typedef int (*func_readChannel)(char *cid, char *buf, int n, char blocking);
 typedef int (*func_printChannelStatus)(char *cid);
-typedef int (*func_closeChannel)(char *cid);
+typedef void (*func_closeChannel)(char *cid);
 
 func_initLibrary _initLibrary;
 func_cleanLibrary _cleanLibrary;
@@ -120,14 +120,15 @@ Boolean PrintChannelStatus(const CallbackInfo& info) {
     return Boolean::New(env, _printChannelStatus((char*)cid.c_str()) == OP_SUCCEED);
 }
 
-Boolean CloseChannel(const CallbackInfo& info) {
+void CloseChannel(const CallbackInfo& info) {
     Env env = info.Env();
     if (info.Length() < 1 || !info[0].IsString()) {
         TypeError::New(env, "Invalid parameter, (char *cid).")
             .ThrowAsJavaScriptException();
     }
     std::string cid = info[0].As<String>().Utf8Value();
-    return Boolean::New(env, _closeChannel((char*)cid.c_str()) == OP_SUCCEED);
+    _closeChannel((char*)cid.c_str());
+    return;
 }
 
 Object Initialize(Env env, Object exports) {

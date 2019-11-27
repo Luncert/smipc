@@ -1,4 +1,8 @@
+
+const path = require('path')
 const smipc = require('./build/Release/smipc.node')
+smipc.loadSmipc(path.join(__dirname, 'lib/libsmipc.dll'))
+delete smipc['loadSmipc']
 
 const testCid = "test-chan"
 const dataSz = 1024
