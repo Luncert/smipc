@@ -81,16 +81,17 @@ Boolean OpenChannel(const CallbackInfo& info) {
 Number ReadChannel(const CallbackInfo& info) {
     Env env = info.Env();
     if (info.Length() < 4 || !info[0].IsString() || !info[1].IsTypedArray()
-        || !info[2].IsNumber() || !info[3].IsBoolean()) {
-        Napi::TypeError::New(env, "Invalid parameter, (char *cid, char *buf, int n, bool blocking).")
+        || !info[2].IsNumber() || !info[3].IsNumber() || !info[4].IsBoolean()) {
+        Napi::TypeError::New(env, "Invalid parameter, (cid: string, buf: Uint8Array, startPos: numebr, n: number, blocking: bool).")
             .ThrowAsJavaScriptException();
     }
     std::string cid = info[0].As<String>().Utf8Value();
     Uint8Array arr = info[1].As<Uint8Array>();
-    Number n = info[2].As<Number>();
-    Boolean blocking = info[3].As<Boolean>();
+    Number startPos = info[2].As<Number>();
+    Number n = info[3].As<Number>();
+    Boolean blocking = info[4].As<Boolean>();
 
-    char* data = reinterpret_cast<char *>(arr.ArrayBuffer().Data());
+    char* data = reinterpret_cast<char *>(arr.ArrayBuffer().Data()) + startPos;
     int ret = _readChannel((char*)cid.c_str(), data, n.Int32Value(), blocking.Value() ? 1 : 0);
     return Number::New(env, ret);
 }

@@ -14,7 +14,7 @@ if (args[0] == '-r') {
     let buf = new Uint8Array(dataSz)
     // send data
     smipc.printChannelStatus(testCid)
-    let n = smipc.readChannel(testCid, buf, dataSz, true)
+    let n = smipc.readChannel(testCid, buf, 0, dataSz, true)
     console.log('read ' + n)
     smipc.printChannelStatus(testCid)
     // clean
