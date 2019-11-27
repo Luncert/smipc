@@ -13,7 +13,7 @@ const char *logLevelNames[] = {"TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL
 int logLevel = LOG_LEVEL_DEBUG;
 
 void setLogLevel(int l) {
-    if (l < LOG_LEVEL_DEBUG || l > LOG_LEVEL_DISABLE) {
+    if (l < LOG_LEVEL_TRACE || l > LOG_LEVEL_DISABLE) {
         printf("[ERROR] Invalid log level value %d.\n", l);
         return;
     }
