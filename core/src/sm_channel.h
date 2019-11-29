@@ -1,5 +1,5 @@
-#ifndef SMIPC_LIBRARY_H
-#define SMIPC_LIBRARY_H
+#ifndef LIPC_SM_CHANNEL_H
+#define LIPC_SM_CHANNEL_H
 
 #include <windows.h>
 #include "map.h"
@@ -72,4 +72,4 @@ void sb_read_n(SyncBuf s, char *buf, int n);
 void sb_write_n(SyncBuf s, char *data, int n);
 int sb_inc_rc(SyncBuf s, int delta);
 int sb_inc_wc(SyncBuf s, int delta);
-#endif //SMIPC_LIBRARY_H
+#endif //LIPC_SM_CHANNEL_H

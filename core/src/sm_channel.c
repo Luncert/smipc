@@ -3,7 +3,7 @@
 #include <windows.h>
 #include "map.h"
 #include "util.h"
-#include "library.h"
+#include "sm_channel.h"
 
 const u_char MARK_READER_OPEN     = 0b1000;
 const u_char MARK_WRITER_OPEN     = 0b0100;
