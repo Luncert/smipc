@@ -1,8 +1,8 @@
-# smipc
+# smipc for nodejs
 
 This package is used to transport big data between processes, bases on shared memory.
 
-> For now, only windows supported.
+> For now, only windows is supported.
 
 ## API
 
