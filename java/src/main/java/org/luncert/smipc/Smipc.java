@@ -35,15 +35,14 @@ public final class Smipc {
   
   /**
    * Open new channel with provided configurations.
-   * @param channelId channel id, all opened channel will be saved to a internal map,
+   * @param cid channel id, all opened channel will be saved to a internal map,
    *                  thus provided id must be different from all the existing's
    * @param mode channel mode, READ or WRITE, see {@link org.luncert.smipc.constants.ChannelMode}
    * @param channelSize channel size, in other words, the shared memory's capacity
    * @return {@link org.luncert.smipc.Smipc.Channel}
    * @throws IOException if operation failed, throw {@code IOException}
    */
-  public static Channel open(String channelId, ChannelMode mode, int channelSize) throws IOException {
-    char[] cid = channelId.toCharArray();
+  public static Channel open(String cid, ChannelMode mode, int channelSize) throws IOException {
     int ret = SmipcLib.openChannel(cid, mode.getMode(), channelSize);
     checkOperationRetVal(ret, "failed to open channel");
     
@@ -52,10 +51,10 @@ public final class Smipc {
   
   public static class Channel implements Closeable {
     
-    private final char[] cid;
+    private final String cid;
     private final ChannelMode mode;
     
-    Channel(char[] cid, ChannelMode mode) {
+    Channel(String cid, ChannelMode mode) {
       this.cid = cid;
       this.mode = mode;
     }

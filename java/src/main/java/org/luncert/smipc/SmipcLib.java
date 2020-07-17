@@ -28,15 +28,15 @@ public final class SmipcLib {
   
   native static void cleanLibrary();
   
-  native static int openChannel(char[] cid, int channelMode, int channelSize);
+  native static int openChannel(String cid, int channelMode, int channelSize);
   
-  native static int writeChannel(char[] cid, byte[] data, int start, int end);
+  native static int writeChannel(String cid, byte[] data, int start, int end);
   
-  native static int readChannel(char[] cid, byte[] data, int start, int end, boolean blocking);
+  native static int readChannel(String cid, byte[] data, int start, int end, boolean blocking);
   
-  native static int printChannelStatus(char[] cid);
+  native static int printChannelStatus(String cid);
   
-  native static void closeChannel(char[] cid);
+  native static void closeChannel(String cid);
   
   static {
     URL url = SmipcLib.class.getResource("/lib/libsmipc.dll");

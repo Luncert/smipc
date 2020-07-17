@@ -3,7 +3,7 @@ from smipc import *
 
 cid = b'test-chan'
 chanSz = 20
-dataSz = 1024
+dataSz = 64
 init_library(LOG_ALL)
 buf = create_string_buffer(dataSz)
 with open_channel(cid, CHAN_R, chanSz) as c:

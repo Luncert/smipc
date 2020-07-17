@@ -5,12 +5,6 @@
 #include "org_luncert_smipc_Smipc.h"
 #include "sm_channel.h"
 
-char* parseJCharArrayToCharPointer(JNIEnv *jniEnv, jcharArray raw) {
-    // TODO: usage of isCopy
-    jboolean isCopy;
-    return (char*) (*jniEnv)->GetCharArrayElements(jniEnv, raw, &isCopy);
-}
-
 // main
 
 void JNICALL Java_org_luncert_smipc_SmipcLib_initLibrary(JNIEnv *jniEnv, jclass clazz, jint logMode) {
@@ -22,32 +16,60 @@ void JNICALL Java_org_luncert_smipc_SmipcLib_cleanLibrary(JNIEnv *jniEnv, jclass
 }
 
 JNIEXPORT jint JNICALL Java_org_luncert_smipc_SmipcLib_openChannel(JNIEnv *jniEnv, jclass clazz,
-                                                                   jcharArray channelId, jint mode, jint chanSz) {
-    return openChannel(parseJCharArrayToCharPointer(jniEnv, channelId), mode, chanSz);
+                                                                   jbyteArray channelId, jint mode, jint chanSz) {
+    jboolean isCopy;
+    const char* cid = (*jniEnv)->GetStringUTFChars(jniEnv, channelId, &isCopy);
+
+    printf("123\n");
+    int ret = openChannel(cid, mode, chanSz);
+
+    (*jniEnv)->ReleaseStringUTFChars(jniEnv, channelId, cid);
+    return ret;
 }
 
 jint JNICALL Java_org_luncert_smipc_SmipcLib_writeChannel(JNIEnv *jniEnv, jclass clazz,
-        jcharArray channelId, jbyteArray data, jint start, jint end) {
+        jbyteArray channelId, jbyteArray data, jint start, jint end) {
     jboolean isCopy;
     jbyte* byteData = (*jniEnv)->GetByteArrayElements(jniEnv, data, &isCopy);
-    return writeChannel(parseJCharArrayToCharPointer(jniEnv, channelId),
-                        byteData, start, end);
+    const char* cid = (*jniEnv)->GetStringUTFChars(jniEnv, channelId, &isCopy);
+
+    int ret = writeChannel(cid, byteData, start, end);
+
+    (*jniEnv)->ReleaseStringUTFChars(jniEnv, channelId, cid);
+    (*jniEnv)->ReleaseByteArrayElements(jniEnv, data, byteData, JNI_COMMIT);
+    return ret;
 }
 
 jint JNICALL Java_org_luncert_smipc_SmipcLib_readChannel(JNIEnv *jniEnv, jclass clazz,
-        jcharArray channelId, jbyteArray buffer, jint start, jint end, jboolean blocking) {
+        jstring channelId, jbyteArray buffer, jint start, jint end, jboolean blocking) {
     jboolean isCopy;
     jbyte* byteBuffer = (*jniEnv)->GetByteArrayElements(jniEnv, buffer, &isCopy);
-    return readChannel(parseJCharArrayToCharPointer(jniEnv, channelId),
-            byteBuffer, start, end, blocking);
+    const char* cid = (*jniEnv)->GetStringUTFChars(jniEnv, channelId, &isCopy);
+
+    int ret = readChannel(cid, byteBuffer, start, end, blocking);
+
+    (*jniEnv)->ReleaseStringUTFChars(jniEnv, channelId, cid);
+    (*jniEnv)->ReleaseByteArrayElements(jniEnv, buffer, byteBuffer, JNI_COMMIT);
+    return ret;
 }
 
 jint JNICALL Java_org_luncert_smipc_SmipcLib_printChannelStatus(JNIEnv *jniEnv, jclass clazz,
-        jcharArray channelId) {
-    return printChannelStatus(parseJCharArrayToCharPointer(jniEnv, channelId));
+        jbyteArray channelId) {
+    jboolean isCopy;
+    const char* cid = (*jniEnv)->GetStringUTFChars(jniEnv, channelId, &isCopy);
+
+    int ret = printChannelStatus(cid);
+
+    (*jniEnv)->ReleaseStringUTFChars(jniEnv, channelId, cid);
+    return ret;
 }
 
 void JNICALL Java_org_luncert_smipc_SmipcLib_closeChannel(JNIEnv *jniEnv, jclass clazz,
-        jcharArray channelId) {
-    closeChannel(parseJCharArrayToCharPointer(jniEnv, channelId));
+        jbyteArray channelId) {
+    jboolean isCopy;
+    const char* cid = (*jniEnv)->GetStringUTFChars(jniEnv, channelId, &isCopy);
+
+    closeChannel(cid);
+
+    (*jniEnv)->ReleaseStringUTFChars(jniEnv, channelId, cid);
 }

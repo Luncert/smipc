@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <util.h>
 #include <string.h>
-#include <library.h>
+#include <sm_channel.h>
 #include <time.h>
 #include "crc.h"
 
@@ -184,7 +184,7 @@ void async_writer() {
     closeChannel(cid);
 }
 
-#define B_CHAN_SZ 512
+#define B_CHAN_SZ 2048
 #define B_FRAME_SZ 1111111
 
 void benchmark_reader() {
@@ -368,7 +368,7 @@ int main(int argc, char *argv[]) {
 
     char *p = argv[1];
 
-    initLibrary(LOG_ALL);
+    initLibrary(LOG_BASIC);
     if (strcmp("-w", p) == 0) {
         simple_writer();
     } else if (strcmp("-r", p) == 0) {

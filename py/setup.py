@@ -1,5 +1,7 @@
 from setuptools import setup
 
+# TODO: path
+
 setup(
     name='smipc',
     version='1.0.0',
