@@ -10,9 +10,9 @@ This package is used to transport big data between processes, bases on shared me
   * ```isTraceMode```: print some debug info if set true.
 * ```openChannel(cid: string, mode: number, chanSz: number): bool```
   * ```mode```: CHAN_R=open channel as reader, CHAN_W=open channel as writer
-* ```readChannel(cid: string, buf: Uint8Array, sz: number, blocking: bool): number```
+* ```readChannel(cid: string, buf: Uint8Array, startInclusive: number, endExclusive: number, blocking: bool): number```
   * ```blocking```: if set true, block operation until received the specified amount of data or opposite end closed
-* ```writeChannel(cid: string, data: Uint8Array, sz: number): bool```
+* ```writeChannel(cid: string, data: Uint8Array, startInclusive: number, endExclusive: number): bool```
 * ```printChannelStatus(cid: string): bool```
 * ```closeChannel(cid: string): bool```
 * ```deinit(): void```: clean library

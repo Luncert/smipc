@@ -71,7 +71,7 @@ class Channel(object):
             data = bytes(data)
         elif not isinstance(data, bytes):
             raise ParameterTypeError('Data must be str or bytes.')
-        ret = _lib.writeChannel(self.cid, data, len(data))
+        ret = _lib.writeChannel(self.cid, data, 0, len(data))
         if ret == _OPPOSITE_END_CLOSED:
             raise OppositeEndClosedError()
         elif ret == _OP_FAILED:
@@ -85,7 +85,7 @@ class Channel(object):
         :param blocking: True or False
         :return: num bytes read
         """
-        ret = _lib.readChannel(self.cid, buf, n, 1 if blocking else 0)
+        ret = _lib.readChannel(self.cid, buf, 0, n, 1 if blocking else 0)
         if ret == _OPPOSITE_END_CLOSED:
             raise OppositeEndClosedError()
         elif ret == _OP_FAILED:

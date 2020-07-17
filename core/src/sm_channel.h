@@ -1,5 +1,7 @@
-#ifndef LIPC_SM_CHANNEL_H
-#define LIPC_SM_CHANNEL_H
+#ifndef SMIPC_SM_CHANNEL_H
+#define SMIPC_SM_CHANNEL_H
+
+#define SMIPC_DLL_API __declspec(dllexport)
 
 #include <windows.h>
 #include "map.h"
@@ -45,15 +47,15 @@ typedef struct channel {
     DataListener dataListener;
 } *Channel;
 
-void initLibrary(int logMode);
-void cleanLibrary();
-int openChannel(char *cid, int mode, int chanSz);
-int writeChannel(char *cid, signed char *data, int start, int end);
-int readChannel(char *cid, signed char *buf, int start, int end, unsigned char blocking);
-int onChannelData(char *cid, Callback callback);
-int removeListener(char *cid);
-int printChannelStatus(char *cid);
-void closeChannel(char *cid);
+SMIPC_DLL_API void initLibrary(int logMode);
+SMIPC_DLL_API void cleanLibrary();
+SMIPC_DLL_API int openChannel(const char *cid, int mode, int chanSz);
+SMIPC_DLL_API int writeChannel(const char *cid, signed char *data, int start, int end);
+SMIPC_DLL_API int readChannel(const char *cid, signed char *buf, int start, int end, unsigned char blocking);
+SMIPC_DLL_API int onChannelData(const char *cid, Callback callback);
+SMIPC_DLL_API int removeListener(const char *cid);
+SMIPC_DLL_API int printChannelStatus(const char *cid);
+SMIPC_DLL_API void closeChannel(const char *cid);
 
 SyncBuf newSyncBuf(char *shareMem, int bufSz, int mode, String semName, char isNewMem);
 int initSyncBufEvent(String namePrefix, HANDLE *hREvt, HANDLE *hWEvt);
@@ -73,4 +75,4 @@ void sb_write_n(SyncBuf s, signed char *data, int n);
 int sb_inc_rc(SyncBuf s, int delta);
 int sb_inc_wc(SyncBuf s, int delta);
 
-#endif //LIPC_SM_CHANNEL_H
+#endif //SMIPC_SM_CHANNEL_H

@@ -18,11 +18,11 @@ using namespace Napi;
 
 typedef void (*func_initLibrary)(int isTraceMode);
 typedef void (*func_cleanLibrary)();
-typedef int (*func_openChannel)(char *cid, int mode, int chanSz);
-typedef int (*func_writeChannel)(char *cid, char *data, int len);
-typedef int (*func_readChannel)(char *cid, char *buf, int n, char blocking);
-typedef int (*func_printChannelStatus)(char *cid);
-typedef void (*func_closeChannel)(char *cid);
+typedef int (*func_openChannel)(const char *cid, int mode, int chanSz);
+typedef int (*func_writeChannel)(const char *cid, char *data, int start, int end);
+typedef int (*func_readChannel)(const char *cid, char *buf, int start, int end, char blocking);
+typedef int (*func_printChannelStatus)(const char *cid);
+typedef void (*func_closeChannel)(const char *cid);
 
 func_initLibrary _initLibrary;
 func_cleanLibrary _cleanLibrary;
@@ -85,32 +85,34 @@ Boolean OpenChannel(const CallbackInfo& info) {
 Number ReadChannel(const CallbackInfo& info) {
     Env env = info.Env();
     if (info.Length() < 4 || !info[0].IsString() || !info[1].IsTypedArray()
-        || !info[2].IsNumber() || !info[3].IsBoolean()) {
-        Napi::TypeError::New(env, "Invalid parameter, (cid: string, buf: Uint8Array, n: number, blocking: bool).")
+        || !info[2].IsNumber() || !info[3].IsNumber() || !info[4].IsBoolean()) {
+        Napi::TypeError::New(env, "Invalid parameter, (cid: string, buf: Uint8Array, start: number, end: number, blocking: bool).")
             .ThrowAsJavaScriptException();
     }
     std::string cid = info[0].As<String>().Utf8Value();
     Uint8Array arr = info[1].As<Uint8Array>();
-    Number n = info[2].As<Number>();
-    Boolean blocking = info[3].As<Boolean>();
+    Number start = info[2].As<Number>();
+    Number end = info[3].As<Number>();
+    Boolean blocking = info[4].As<Boolean>();
 
     char* data = reinterpret_cast<char *>(arr.ArrayBuffer().Data());
-    int ret = _readChannel((char*)cid.c_str(), data, n.Int32Value(), blocking.Value() ? 1 : 0);
+    int ret = _readChannel((const char*)cid.c_str(), data, start.Int32Value(), end.Int32Value(), blocking.Value() ? 1 : 0);
     return Number::New(env, ret);
 }
 
 Boolean WriteChannel(const CallbackInfo& info) {
     Env env = info.Env();
-    if (info.Length() < 3 || !info[0].IsString() || !info[1].IsTypedArray() || !info[2].IsNumber()) {
-        Napi::TypeError::New(env, "Invalid parameter, (cid: string, data: Uint8Array, n: number).")
+    if (info.Length() < 3 || !info[0].IsString() || !info[1].IsTypedArray() || !info[2].IsNumber() || !info[3].IsNumber()) {
+        Napi::TypeError::New(env, "Invalid parameter, (cid: string, data: Uint8Array, start: number, end: number).")
             .ThrowAsJavaScriptException();
     }
     std::string cid = info[0].As<String>().Utf8Value();
     Uint8Array arr = info[1].As<Uint8Array>();
-    Number n = info[2].As<Number>();
+    Number start = info[2].As<Number>();
+    Number end = info[3].As<Number>();
 
     char* data = reinterpret_cast<char *>(arr.ArrayBuffer().Data());
-    return Boolean::New(env, _writeChannel((char*)cid.c_str(), data, n.Int32Value()) == OP_SUCCEED);
+    return Boolean::New(env, _writeChannel((const char*)cid.c_str(), data, start.Int32Value(), end.Int32Value()) == OP_SUCCEED);
 }
 
 Boolean PrintChannelStatus(const CallbackInfo& info) {
@@ -121,7 +123,7 @@ Boolean PrintChannelStatus(const CallbackInfo& info) {
     }
     // String的析构函数会自动释放内存，所以这里用cid来保存其引用
     std::string cid = info[0].As<String>().Utf8Value();
-    return Boolean::New(env, _printChannelStatus((char*)cid.c_str()) == OP_SUCCEED);
+    return Boolean::New(env, _printChannelStatus((const char*)cid.c_str()) == OP_SUCCEED);
 }
 
 void CloseChannel(const CallbackInfo& info) {
@@ -131,7 +133,7 @@ void CloseChannel(const CallbackInfo& info) {
             .ThrowAsJavaScriptException();
     }
     std::string cid = info[0].As<String>().Utf8Value();
-    _closeChannel((char*)cid.c_str());
+    _closeChannel((const char*)cid.c_str());
     return;
 }
 

@@ -20,7 +20,6 @@ JNIEXPORT jint JNICALL Java_org_luncert_smipc_SmipcLib_openChannel(JNIEnv *jniEn
     jboolean isCopy;
     const char* cid = (*jniEnv)->GetStringUTFChars(jniEnv, channelId, &isCopy);
 
-    printf("123\n");
     int ret = openChannel(cid, mode, chanSz);
 
     (*jniEnv)->ReleaseStringUTFChars(jniEnv, channelId, cid);

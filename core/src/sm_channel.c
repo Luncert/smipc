@@ -79,7 +79,7 @@ void cleanLibrary() {
  * @param chanSz vailable memory size for channel
  * @return OP_SUCCEED, OP_FAILED
  */
-int openChannel(char *cid, int mode, int chanSz) {
+int openChannel(const char *cid, int mode, int chanSz) {
     if (mode != CHAN_R && mode != CHAN_W) {
         logError("Invalid channel mode, must be CHAN_R(0) or CHAN_W(1).");
         return OP_FAILED;
@@ -187,7 +187,7 @@ int openChannel(char *cid, int mode, int chanSz) {
  * @param blocking
  * @return n, OPPOSITE_END_CLOSED, OP_FAILED
  */
-int readChannel(char *cid, signed char *buf, int start, int end, unsigned char blocking) {
+int readChannel(const char *cid, signed char *buf, int start, int end, unsigned char blocking) {
     Channel channel, *p;
     p = map_get(channelMap, cid);
     if (p == NULL) {
@@ -222,7 +222,7 @@ int readChannel(char *cid, signed char *buf, int start, int end, unsigned char b
  * @param callback
  * @return
  */
-int onChannelData(char *cid, Callback callback) {
+int onChannelData(const char *cid, Callback callback) {
     if (callback == NULL) {
         logError("Invalid parameter, callback should be nonnull.");
         return OP_FAILED;
@@ -286,7 +286,7 @@ int onChannelData(char *cid, Callback callback) {
  * Remove data listener.
  * @param cid
  */
-int removeListener(char *cid) {
+int removeListener(const char *cid) {
     Channel channel, *p;
     p = map_get(channelMap, cid);
     if (p == NULL) {
@@ -326,7 +326,7 @@ int removeListener(char *cid) {
  * @param end exclusive end position of data
  * @return OP_SUCCEED, OPPOSITE_END_CLOSED, OP_FAILED
  */
-int writeChannel(char *cid, signed char *data, int start, int end) {
+int writeChannel(const char *cid, signed char *data, int start, int end) {
     Channel channel, *p;
     p = map_get(channelMap, cid);
     if (p == NULL) {
@@ -349,7 +349,7 @@ int writeChannel(char *cid, signed char *data, int start, int end) {
     return writeSyncBuf(channel->syncBuf, data, start, end);
 }
 
-int printChannelStatus(char *cid) {
+int printChannelStatus(const char *cid) {
     Channel channel, *p;
     p = map_get(channelMap, cid);
     if (p == NULL) {
@@ -378,7 +378,7 @@ int printChannelStatus(char *cid) {
  * closeChannel
  * @param cid channel id
  */
-void closeChannel(char *cid) {
+void closeChannel(const char *cid) {
     Channel channel, *p;
     p = map_get(channelMap, cid);
     if (p == NULL) {
