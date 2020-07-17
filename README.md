@@ -4,5 +4,5 @@ A shared memory library crossing language built in C. For now, only following la
 
 * c
 * c++
-* [python](nodejs/README.md)
+* [python](py/README.md)
 * [nodejs](nodejs/README.md)
