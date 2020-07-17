@@ -182,11 +182,12 @@ int openChannel(char *cid, int mode, int chanSz) {
  * readChannel
  * @param cid channel id
  * @param buf
- * @param n
+ * @param start inclusive start position of buffer
+ * @param end exclusive end position of buffer
  * @param blocking
  * @return n, OPPOSITE_END_CLOSED, OP_FAILED
  */
-int readChannel(char *cid, char *buf, int n, char blocking) {
+int readChannel(char *cid, signed char *buf, int start, int end, unsigned char blocking) {
     Channel channel, *p;
     p = map_get(channelMap, cid);
     if (p == NULL) {
@@ -205,10 +206,11 @@ int readChannel(char *cid, char *buf, int n, char blocking) {
         logError("Channel doesn't support read operation.");
         return OP_FAILED;
     }
+
     if (blocking) {
-        return readSyncBufB(channel->syncBuf, buf, n);
+        return readSyncBufB(channel->syncBuf, buf, start, end);
     } else {
-        return readSyncBuf(channel->syncBuf, buf, n);
+        return readSyncBuf(channel->syncBuf, buf, start, end);
     }
 }
 
@@ -320,10 +322,11 @@ int removeListener(char *cid) {
  * writeChannel
  * @param cid channel id
  * @param data
- * @param len
+ * @param start inclusive start position of data
+ * @param end exclusive end position of data
  * @return OP_SUCCEED, OPPOSITE_END_CLOSED, OP_FAILED
  */
-int writeChannel(char *cid, char *data, int len) {
+int writeChannel(char *cid, signed char *data, int start, int end) {
     Channel channel, *p;
     p = map_get(channelMap, cid);
     if (p == NULL) {
@@ -337,11 +340,13 @@ int writeChannel(char *cid, char *data, int len) {
         logError("Channel doesn't support write operation.");
         return OP_FAILED;
     }
+
+    int len = end - start;
     if (len <= 0) {
         logError("Invalid parameter, len should be positive.");
         return OP_FAILED;
     }
-    return writeSyncBuf(channel->syncBuf, data, len);
+    return writeSyncBuf(channel->syncBuf, data, start, end);
 }
 
 int printChannelStatus(char *cid) {
@@ -527,7 +532,7 @@ int get_buf_writeable(SyncBuf s) {
 }
 
 // 我一开始把这两个函数写成了宏定义的，但是总是有两个字节会写出错；结果改成函数调用就没问题了。。。
-inline void sb_read_n(SyncBuf s, char *buf, int n) {
+inline void sb_read_n(SyncBuf s, signed char *buf, int n) {
     int t = sb_bufSz(s) - sb_rc(s);
     if (t < n) {
         memcpy(buf, s->buf + sb_rc(s), t);
@@ -537,7 +542,7 @@ inline void sb_read_n(SyncBuf s, char *buf, int n) {
     }
 }
 
-inline void sb_write_n(SyncBuf s, char *data, int n) {
+inline void sb_write_n(SyncBuf s, signed char *data, int n) {
     int t = sb_bufSz(s) - sb_wc(s);
     if (t < n) {
         memcpy(s->buf + sb_wc(s), data, t);
@@ -633,7 +638,7 @@ int asyncReadRoutine(LPVOID lpParam) {
     return OP_SUCCEED;
 }
 
-int readSyncBuf(SyncBuf s, char *buf, int sz) {
+int readSyncBuf(SyncBuf s, signed char *buf, int start, int end) {
     int n = get_buf_readable(s);
     if (n == 0) {
         if (is_writer_close(s)) {
@@ -642,17 +647,19 @@ int readSyncBuf(SyncBuf s, char *buf, int sz) {
         }
         return 0;
     }
+    int sz = end - start;
     if (n > sz) {
         n = sz;
     }
-    sb_read_n(s, buf, n);
+    sb_read_n(s, buf + start, n);
     sb_inc_rc(s, n);
     return n;
 }
 
 // NOTE: be careful to read writer's data in reader (You may read dirty data).
-int readSyncBufB(SyncBuf s, char *buf, int sz) {
-    int offset = 0;
+int readSyncBufB(SyncBuf s, signed char *buf, int start, int end) {
+    int offset = start;
+    int sz = end - start;
     while (sz > 0) {
         int n = get_buf_readable(s);
         // wait for write event
@@ -683,8 +690,9 @@ int readSyncBufB(SyncBuf s, char *buf, int sz) {
     return offset;
 }
 
-int writeSyncBuf(SyncBuf s, const char *data, int sz) {
-    int offset = 0;
+int writeSyncBuf(SyncBuf s, signed char *data, int start, int end) {
+    int offset = start;
+    int sz = end - start;
     while (sz > 0) {
         if (is_reader_close(s)) {
             printf("%d\n", sz);

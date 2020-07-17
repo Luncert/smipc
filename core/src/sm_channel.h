@@ -48,8 +48,8 @@ typedef struct channel {
 void initLibrary(int logMode);
 void cleanLibrary();
 int openChannel(char *cid, int mode, int chanSz);
-int writeChannel(char *cid, char *data, int len);
-int readChannel(char *cid, char *buf, int n, char blocking);
+int writeChannel(char *cid, signed char *data, int start, int end);
+int readChannel(char *cid, signed char *buf, int start, int end, unsigned char blocking);
 int onChannelData(char *cid, Callback callback);
 int removeListener(char *cid);
 int printChannelStatus(char *cid);
@@ -60,16 +60,17 @@ int initSyncBufEvent(String namePrefix, HANDLE *hREvt, HANDLE *hWEvt);
 int get_buf_readable(SyncBuf s);
 int get_buf_writeable(SyncBuf s);
 int asyncReadRoutine(LPVOID lpParam);
-int readSyncBuf(SyncBuf syncBuf, char *buf, int sz);
-int readSyncBufB(SyncBuf s, char *buf, int sz);
-int writeSyncBuf(SyncBuf syncBuf, const char *data, int sz);
+int readSyncBuf(SyncBuf syncBuf, signed char *buf, int start, int end);
+int readSyncBufB(SyncBuf s, signed char *buf, int start, int end);
+int writeSyncBuf(SyncBuf syncBuf, signed char *data, int start, int end);
 int releaseSyncBuf(SyncBuf s, int mode);
 
 HANDLE lock(String mutexName);
 void unlock(HANDLE mutex);
 
-void sb_read_n(SyncBuf s, char *buf, int n);
-void sb_write_n(SyncBuf s, char *data, int n);
+void sb_read_n(SyncBuf s, signed char *buf, int n);
+void sb_write_n(SyncBuf s, signed char *data, int n);
 int sb_inc_rc(SyncBuf s, int delta);
 int sb_inc_wc(SyncBuf s, int delta);
+
 #endif //LIPC_SM_CHANNEL_H
