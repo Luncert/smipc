@@ -242,7 +242,7 @@ int onChannelData(const char *cid, Callback callback) {
     }
 
     if (channel->dataListener != NULL) {
-        logError("Another listener has bound to this channel.");
+        logError("Another listener has been bound to this channel.");
         return OP_FAILED;
     }
 
@@ -590,7 +590,7 @@ int asyncReadRoutine(LPVOID lpParam) {
     hArray[1] = s->hWEvt;
 
     int waitRet;
-    char *buf = (char*)malloc(1);
+    signed char *buf = (signed char*)malloc(1);
     int bufSz = 1;
     while (1) {
         int n = get_buf_readable(s);
@@ -609,7 +609,7 @@ int asyncReadRoutine(LPVOID lpParam) {
         } else {
             if (n > bufSz) {
                 free(buf);
-                buf = (char*)malloc(n);
+                buf = (signed char*)malloc(n);
                 bufSz = n;
             }
             sb_read_n(s, buf, n);
