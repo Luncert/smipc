@@ -1,6 +1,6 @@
 # smipc
 
-A shared memory library crossing language built in C. For now, only following languages are supported:
+A shared memory library crossing language built in C. Only support following languages for now:
 
 * c/c++
 * [python](py/README.md)
